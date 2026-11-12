@@ -471,12 +471,21 @@ footer .ph{text-decoration-color:var(--or-clair)}
     keepDecoded(curSheet);
     if (s === 0) requestDraw(true);
     // le début de la séquence suffit pour commencer : le reste continue de charger en arrière-plan
-    if (loaded >= Math.min(SHEETS, 20)) { loader.classList.add("done"); requestDraw(true); }
+    if (loaded === Math.min(SHEETS, 20)) thumbsReady.then(() => { loader.classList.add("done"); requestDraw(true); });
   };
   // Les planches sont téléchargées comme fichiers (Blob) : leur décodage par createImageBitmap
   // se fait alors hors du fil principal. Si fetch n'est pas disponible (page ouverte en file://),
   // on retombe sur de simples <img>.
   const blobs = new Array(SHEETS);
+  // Planche de vignettes (toute la séquence en petit, ~1,4 Mo) : chargée en premier et gardée
+  // décodée, elle sert d'image de secours pendant un scroll rapide, pour ne jamais afficher de noir.
+  const TCOLS = 24, TW = TIER === "mob" ? 108 : 160, TH = TIER === "mob" ? 180 : 90;
+  let thumbs = null;
+  const thumbsReady = fetch(`seq/thumbs-${TIER === "mob" ? "mob" : "land"}.webp`)
+    .then(r => r.ok ? r.blob() : Promise.reject())
+    .then(b => createImageBitmap(b))
+    .then(bm => { thumbs = bm; requestDraw(true); })
+    .catch(() => {});
   function loadImg(s) {
     const im = new Image();
     im.decoding = "async";
@@ -505,17 +514,17 @@ footer .ph{text-decoration-color:var(--or-clair)}
   // Décode à l'avance (hors du fil principal) les planches autour de la position courante,
   // et libère les autres pour garder la mémoire basse.
   const AHEAD = TIER === "hd" ? 4 : 3, BEHIND = TIER === "hd" ? 2 : 1;
-  let dir = 1;
+  let dir = 1, pinned = -1;   // pinned : dernière planche affichée, jamais libérée
   function keepDecoded(c) {
     const lo = c - (dir > 0 ? BEHIND : AHEAD), hi = c + (dir > 0 ? AHEAD : BEHIND);
-    for (const [s, bm] of bitmaps) if (s < lo - 1 || s > hi + 1) { bm.close && bm.close(); bitmaps.delete(s); }
+    for (const [s, bm] of bitmaps) if ((s < lo - 1 || s > hi + 1) && s !== pinned) { bm.close && bm.close(); bitmaps.delete(s); }
     if (!window.createImageBitmap) return;
     for (let s = Math.max(0, lo); s <= Math.min(SHEETS - 1, hi); s++) {
       if (bitmaps.has(s) || pending.has(s) || !isOk(sheets[s])) continue;
       pending.add(s);
       createImageBitmap(blobs[s] || sheets[s]).then(bm => {
         pending.delete(s);
-        if (Math.abs(s - curSheet) > AHEAD + 2) { bm.close && bm.close(); return; }
+        if (Math.abs(s - curSheet) > AHEAD + 2 && s !== pinned) { bm.close && bm.close(); return; }
         bitmaps.set(s, bm); requestDraw(true);
       }).catch(() => pending.delete(s));
     }
@@ -524,12 +533,15 @@ footer .ph{text-decoration-color:var(--or-clair)}
   function frameSource(f) {
     const s = Math.floor(f / PER), k = f % PER;
     const sx = (k % COLS) * FW, sy = Math.floor(k / COLS) * FH;
-    if (bitmaps.has(s)) return { src: bitmaps.get(s), sx, sy };
-    if (isOk(sheets[s]) && !sheets[s].blob && !window.createImageBitmap) return { src: sheets[s], sx, sy };
+    if (bitmaps.has(s)) return { src: bitmaps.get(s), sx, sy, sw: FW, sh: FH, sheet: s };
+    if (isOk(sheets[s]) && !sheets[s].blob && !window.createImageBitmap) return { src: sheets[s], sx, sy, sw: FW, sh: FH };
+    // image pas encore prête : vignette de la même image (légèrement floue, mais au bon endroit)
+    if (thumbs) return { src: thumbs, sx: (f % TCOLS) * TW, sy: Math.floor(f / TCOLS) * TH, sw: TW, sh: TH, thumb: true };
+    // sinon, la planche décodée la plus proche
     let best = null, bd = 1e9;
     for (const [bs] of bitmaps) { const d = Math.abs(bs - s); if (d < bd) { bd = d; best = bs; } }
     if (best !== null) { const ff = best < s ? best * PER + PER - 1 : best * PER; return frameSource(Math.min(ff, FRAMES - 1)); }
-    if (isOk(sheets[s]) && !sheets[s].blob) return { src: sheets[s], sx, sy };
+    if (isOk(sheets[s]) && !sheets[s].blob) return { src: sheets[s], sx, sy, sw: FW, sh: FH };
     return null;
   }
 
@@ -603,10 +615,10 @@ footer .ph{text-decoration-color:var(--or-clair)}
     const sh = Math.floor(i0 / PER);
     if (sh !== curSheet) { dir = sh > curSheet ? 1 : -1; curSheet = sh; keepDecoded(sh); }
     const a = frameSource(i0);
-    if (a) fctx.drawImage(a.src, a.sx, a.sy, FW, FH, box.x, box.y, box.w, box.h);
+    if (a) { fctx.drawImage(a.src, a.sx, a.sy, a.sw, a.sh, box.x, box.y, box.w, box.h); if (a.sheet !== undefined) pinned = a.sheet; }
     const b = t > 0.02 && i1 !== i0 ? frameSource(i1) : null;
     if (b && (!a || b.src !== a.src || b.sx !== a.sx || b.sy !== a.sy)) {
-      fctx.globalAlpha = t; fctx.drawImage(b.src, b.sx, b.sy, FW, FH, box.x, box.y, box.w, box.h); fctx.globalAlpha = 1;
+      fctx.globalAlpha = t; fctx.drawImage(b.src, b.sx, b.sy, b.sw, b.sh, box.x, box.y, box.w, box.h); fctx.globalAlpha = 1;
     }
     fctx.restore();
     // la page « devient papier »
