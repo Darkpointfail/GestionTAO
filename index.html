@@ -109,12 +109,6 @@ html.in-intro,html.in-intro body{overscroll-behavior:none}
 .hud{position:absolute;right:var(--gxr);top:50%;transform:translateY(-50%);display:grid;gap:14px;justify-items:end;font:500 10px/1 var(--f-text);letter-spacing:.16em;color:rgba(245,239,228,.75);text-transform:uppercase}
 .hud .track{width:1px;height:28vh;background:rgba(245,239,228,.22);position:relative}
 .hud .track i{position:absolute;left:0;top:0;width:1px;height:0;background:var(--or-clair)}
-.hud .dot{all:unset;box-sizing:border-box;position:absolute;left:0;width:22px;height:22px;transform:translate(-50%,-50%);cursor:pointer;display:grid;place-items:center}
-.hud .dot::before{content:"";width:7px;height:7px;border-radius:50%;border:1px solid rgba(245,239,228,.55);background:var(--nuit);transition:background .4s,border-color .4s,transform .4s}
-.hud .dot.past::before{border-color:var(--or-clair)}
-.hud .dot.on::before{background:var(--or-clair);border-color:var(--or-clair);transform:scale(1.35)}
-.hud .dot:hover::before{border-color:var(--titre)}
-.hud .dot:focus-visible{outline:1px solid var(--or);outline-offset:0;border-radius:50%}
 .skip{all:unset;box-sizing:border-box;position:absolute;right:var(--gxr);bottom:calc(22px + env(safe-area-inset-bottom,0px));cursor:pointer;padding:11px 15px;font:500 10px/1 var(--f-text);letter-spacing:.18em;text-transform:uppercase;border:1px solid rgba(245,239,228,.28);border-radius:999px;color:rgba(245,239,228,.82);background:rgba(18,12,10,.35);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);transition:opacity .5s,border-color .3s,color .3s}
 .skip:hover{border-color:var(--or-clair);color:var(--titre)}
 .skip:focus-visible{outline:1px solid var(--or);outline-offset:3px}
@@ -605,38 +599,24 @@ footer .ph{text-decoration-color:var(--or-clair)}
   const lerp = (a, b, t) => a + (b - a) * t;
 
   /* ---------- Pilotage de l'intro : un mouvement continu ----------
-     La molette, le trackpad, le doigt ou le clavier poussent une position « virtuelle » ;
-     la vidéo la suit avec de l'inertie et une vitesse plafonnée : elle ne saute jamais
-     et ne s'arrête jamais net. Autour de chaque titre, la vidéo passe au ralenti
-     (le même geste la fait moins avancer), donc le titre se lit sans que l'image se fige.
-     Quand on lâche entre deux titres, elle glisse doucement jusqu'au titre suivant ;
-     au repos sur un titre, elle continue au ralenti et l'image « respire ». */
-  const STOPS = [0, 0.205, 0.369, 0.541, 1];
-  const NAMES = ["Ouverture", "Formations", "Dégustations", "Photographies", "L'univers TAO"];
-  const LAST = STOPS.length - 1;
-  const SLOW = 0.2, ZW = 0.03, ZONE = 0.024;     // ralenti au centre d'un titre, largeur de la zone
-  const speedAt = p => { let b = 0; for (const s of STOPS) b = Math.max(b, Math.exp(-Math.pow((p - s) / ZW, 4))); return 1 - (1 - SLOW) * b; };
-  // table position vidéo p -> position virtuelle u (u avance plus vite que p dans les zones de titre)
-  const NT = 2000, UT = new Float64Array(NT + 1);
-  for (let k = 1; k <= NT; k++) UT[k] = UT[k - 1] + (1 / NT) / speedAt((k - 0.5) / NT);
-  const U_END = UT[NT];
-  const toU = p => { const x = clamp(p) * NT, k = Math.min(NT - 1, Math.floor(x)); return UT[k] + (UT[k + 1] - UT[k]) * (x - k); };
-  const toP = u => { u = clamp(u, 0, U_END); let lo = 0, hi = NT; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (UT[m] <= u) lo = m; else hi = m; } return (lo + (u - UT[lo]) / (UT[hi] - UT[lo])) / NT; };
-  const SU = STOPS.map(toU);
-  const VMAX = 0.2, ACC = 0.9, K = 3.2, LEAD = 0.13, DRIFT = 0.035;
-  const WHEEL = 1 / 3400, TOUCH = 1 / 1500;
-  let uc = 0, ut = 0, vel = 0, cur = 0, lastDir = 1, lastInput = 0, snapped = true, drifting = false, endAt = 0;
-  let raf = 0, force = false, lastT = 0, zoneIdx = 0;
+     La molette, le trackpad, le doigt ou le clavier poussent une position cible ;
+     la vidéo la suit avec de l'inertie et une vitesse plafonnée : elle ne saute jamais,
+     ne part pas en roue libre et ralentit en douceur quand on arrête de scroller.
+     Au repos, l'image « respire » (léger mouvement de caméra). */
+  const VMAX = 0.2, ACC = 0.9, K = 3.2, LEAD = 0.07;  // 0,2 = 120 images/s au plus : l'intro dure au moins 5 s
+  const WHEEL = 1 / 4500, TOUCH = 1 / 2200;
+  const U_END = 1;
+  let uc = 0, ut = 0, vel = 0, cur = 0, endAt = 0;
+  let raf = 0, force = false, lastT = 0;
   let mode = "intro", capturing = false, autoScroll = false;
   const stage = document.getElementById("stage"), skip = document.getElementById("skip");
   const isReady = () => loader.classList.contains("done");
-  const nextU = (u, s) => s > 0 ? (SU.find(x => x > u + 0.01) ?? U_END) : ([...SU].reverse().find(x => x < u - 0.01) ?? 0);
 
   // Ralentit si les images nettes à venir ne sont pas encore décodées (comme une vidéo qui « bufferise »)
   function readiness(d) {
     if (cur >= VIDEO_END || !window.createImageBitmap) return 1;
     const s = Math.floor(cur / VIDEO_END * (FRAMES - 1) / PER);
-    const gs = Math.floor(Math.min(toP(ut), VIDEO_END) / VIDEO_END * (FRAMES - 1) / PER);
+    const gs = Math.floor(Math.min(ut, VIDEO_END) / VIDEO_END * (FRAMES - 1) / PER);
     const caps = [0.12, 0.12, 0.45, 0.8];
     for (let k = 0; k <= 3; k++) {
       const t = s + d * k;
@@ -650,12 +630,9 @@ footer .ph{text-decoration-color:var(--or-clair)}
   // (un scroll violent ne part donc pas en roue libre)
   function push(du) {
     if (!isReady() || mode !== "intro" || !du) return;
-    lastInput = performance.now(); snapped = false; drifting = false;
-    lastDir = du > 0 ? 1 : -1;
     ut = clamp(clamp(ut + du, uc - LEAD, uc + LEAD), 0, U_END);
     requestDraw();
   }
-  function aim(u) { ut = clamp(u, 0, U_END); lastInput = performance.now(); snapped = true; drifting = false; lastDir = ut >= uc ? 1 : -1; requestDraw(); }
 
   function requestDraw(f) { if (f) force = true; if (!raf) raf = requestAnimationFrame(tick); }
   function tick(now) {
@@ -663,24 +640,6 @@ footer .ph{text-decoration-color:var(--or-clair)}
     const dt = lastT ? Math.min(0.05, (now - lastT) / 1000) : 1 / 60;
     lastT = now;
     if (mode !== "site") {
-      const idle = performance.now() - lastInput;
-      // lâché entre deux titres : la vidéo glisse jusqu'au titre suivant, dans le sens du geste
-      // lâché sur un titre : on reste dans sa zone (la vidéo finit son ralenti sans repartir)
-      if (!snapped && idle > 220) {
-        snapped = true;
-        const pt = toP(ut), pc = toP(uc);
-        const kc = STOPS.findIndex(x => Math.abs(pc - x) < ZONE);
-        if (kc >= 0) ut = clamp(ut, toU(STOPS[kc] - ZONE * 0.85), toU(STOPS[kc] + ZONE * 0.85));
-        else if (!STOPS.some(x => Math.abs(pt - x) < ZONE)) ut = nextU(uc, lastDir);
-      }
-      // au repos sur un titre : la vidéo continue au ralenti, sans dépasser la fin du titre
-      const p0 = toP(uc);
-      const k = STOPS.findIndex(x => Math.abs(p0 - x) < ZONE);
-      if (idle > 900 && snapped && k >= 0 && k < LAST && (drifting || Math.abs(ut - uc) < 0.004)) {
-        drifting = true;
-        const lim = toU(STOPS[k] + ZONE * 0.85);
-        if (ut < lim) ut = Math.min(lim, ut + DRIFT * dt);
-      }
       // suivi avec inertie et vitesse plafonnée
       const d = ut - uc;
       if (reduce) { uc = ut; vel = 0; }
@@ -691,10 +650,9 @@ footer .ph{text-decoration-color:var(--or-clair)}
         vel += clamp(want - vel, -lim, lim);
         uc = clamp(uc + vel * dt, 0, U_END);
       } else { uc = ut; vel = 0; }
-      cur = toP(uc);
+      cur = uc;
       if (uc >= U_END - 2e-3) { if (!endAt) endAt = performance.now(); } else endAt = 0;
-      const z = STOPS.findIndex(x => Math.abs(cur - x) < ZONE);
-      if (z !== zoneIdx) { zoneIdx = z; marks(); }
+      skip.classList.toggle("off", mode !== "intro" || cur > 0.9);
     }
     render(cur);
     // dans l'intro, on redessine en continu : l'image n'est jamais figée
@@ -718,39 +676,25 @@ footer .ph{text-decoration-color:var(--or-clair)}
     setMode("exiting");
     scrollAnim(intro.offsetHeight, 1000, () => { setMode("site"); then && then(); });
   }
-  function place(u) { uc = ut = u; vel = 0; cur = toP(u); endAt = u >= U_END - 2e-3 ? performance.now() : 0; zoneIdx = STOPS.findIndex(x => Math.abs(cur - x) < ZONE); }
+  function place(u) { uc = ut = u; vel = 0; cur = u; endAt = u >= U_END - 2e-3 ? performance.now() : 0; }
   // Retour dans l'intro en remontant tout en haut du site : on repart de la fin, en continu
   function enter() {
-    place(U_END); lastInput = performance.now(); snapped = true;
+    place(U_END);
     setMode("intro");
   }
   // Saut direct avec un court fondu (bouton « Passer l'intro », liens du menu, logo)
   function cut(i, then) {
     stage.style.transition = "opacity .3s ease"; stage.style.opacity = "0";
     setTimeout(() => {
-      place(SU[i]); lastInput = performance.now(); snapped = true;
+      place(i);
       keepDecoded(Math.floor(Math.min(cur, VIDEO_END) / VIDEO_END * (FRAMES - 1) / PER));
-      render(cur); marks(); stage.style.opacity = "1";
+      render(cur); stage.style.opacity = "1";
       then && then();
     }, reduce ? 0 : 320);
   }
 
-  /* Repères : un point par titre sur la barre de droite */
-  const track = document.getElementById("hudtrack");
-  const dots = STOPS.map((p, i) => {
-    const b = document.createElement("button");
-    b.type = "button"; b.className = "dot"; b.style.top = (p * 100) + "%";
-    b.setAttribute("aria-label", NAMES[i]);
-    b.addEventListener("click", () => { if (mode === "intro" && isReady()) aim(SU[i]); });
-    track.appendChild(b);
-    return b;
-  });
-  function marks() {
-    dots.forEach((b, i) => { b.classList.toggle("on", i === zoneIdx); b.classList.toggle("past", STOPS[i] < cur - 1e-3); b.setAttribute("aria-current", i === zoneIdx ? "step" : "false"); });
-    skip.classList.toggle("off", mode !== "intro" || cur > 0.9);
-  }
-  window.__intro = () => ({ cur, uc, ut, mode, zone: zoneIdx, vel });
-  skip.addEventListener("click", () => { if (mode === "intro") cut(LAST, () => leave()); });
+  window.__intro = () => ({ cur, uc, ut, mode, vel });
+  skip.addEventListener("click", () => { if (mode === "intro") cut(1, () => leave()); });
 
   /* Molette et trackpad : chaque cran pousse la vidéo, sans jamais être ignoré */
   const WOPT = { passive: false };
@@ -794,10 +738,10 @@ footer .ph{text-decoration-color:var(--or-clair)}
       f("wheel", onWheel, WOPT); f("touchmove", onTouchMove, WOPT);
     }
     document.documentElement.classList.toggle("in-intro", want);
-    marks();
+    skip.classList.toggle("off", m !== "intro" || cur > 0.9);
     if (want) requestDraw();
   }
-  /* Clavier : flèches et Espace vont d'un titre à l'autre, en douceur */
+  /* Clavier : flèches = petit pas, Espace et Page = grand pas, toujours en douceur */
   addEventListener("keydown", e => {
     if (mode === "site" || e.metaKey || e.ctrlKey || e.altKey) return;
     if (e.target.closest && e.target.closest("input,select,textarea")) return;
@@ -808,10 +752,11 @@ footer .ph{text-decoration-color:var(--or-clair)}
     if (k === " " && e.target.closest && e.target.closest("button,a")) return;
     e.preventDefault();
     if (mode !== "intro" || !isReady()) return;
-    if (k === "Home") return aim(0);
-    if (k === "End") return aim(U_END);
+    if (k === "Home") { ut = 0; return requestDraw(); }
+    if (k === "End") { ut = U_END; return requestDraw(); }
     if (fwd && endAt && !e.repeat) return leave();
-    aim(nextU(uc, fwd ? 1 : -1));
+    const big = k === " " || k.startsWith("Page");
+    ut = clamp(ut + (fwd ? 1 : -1) * (big ? 0.12 : 0.05), 0, U_END); requestDraw();
   });
 
   function render(p) {
@@ -911,7 +856,7 @@ footer .ph{text-decoration-color:var(--or-clair)}
     const el = document.querySelector(id);
     if (!el || mode === "site") return;
     e.preventDefault();
-    if (mode === "intro") cut(LAST, () => { setMode("exiting"); scrollAnim(el.getBoundingClientRect().top + scrollY - 70, 1100, () => setMode("site")); });
+    if (mode === "intro") cut(1, () => { setMode("exiting"); scrollAnim(el.getBoundingClientRect().top + scrollY - 70, 1100, () => setMode("site")); });
   });
   addEventListener("resize", resize);
   if ("scrollRestoration" in history) history.scrollRestoration = "manual";
