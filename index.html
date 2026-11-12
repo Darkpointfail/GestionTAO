@@ -303,7 +303,7 @@ footer .ph{text-decoration-color:var(--or-clair)}
       <div class="hud" id="hud" aria-hidden="true">
         <span id="hudch">Ouverture</span>
         <div class="track"><i id="hudbar"></i></div>
-        <span class="fc" id="hudfc">001 / 240</span>
+        <span class="fc" id="hudfc">001 / 477</span>
       </div>
       <div class="scrollhint" id="hint" aria-hidden="true"><span class="label">Défiler</span><i></i></div>
     </div>
@@ -327,24 +327,24 @@ footer .ph{text-decoration-color:var(--or-clair)}
       </div>
       <div class="sv-layout">
         <ol class="sv-list">
-          <li class="sv active" data-img="frames-hd/f_012.webp">
+          <li class="sv active" data-img="img/cave.webp">
             <button type="button" aria-expanded="true"><span class="ico"><svg><use href="#i-form"/></svg></span><span class="name">Formations de produits</span><span class="meta label">I</span></button>
             <div class="more"><div><p class="ph">Des sessions structurées pour comprendre ce qu'on vend ou ce qu'on sert : profils de produits, régions de production, cépages et repères de dégustation.</p>
               <ul class="chips label"><li>Vins</li><li>Spiritueux</li><li>Aperçus des régions</li><li>Cépages</li></ul></div></div>
           </li>
-          <li class="sv" data-img="frames-hd/f_112.webp">
+          <li class="sv" data-img="img/service.webp">
             <button type="button" aria-expanded="false"><span class="ico"><svg><use href="#i-deg"/></svg></span><span class="name">Dégustations animées</span><span class="meta label">II</span></button>
             <div class="more"><div><p class="ph">Une dégustation commentée et vivante, pour un groupe d'amis, une équipe ou un événement, avec un fil conducteur choisi ensemble.</p>
               <ul class="chips label"><li>Vins</li><li>Spiritueux</li><li>Thématiques</li></ul></div></div>
           </li>
-          <li class="sv" data-img="frames-hd/f_168.webp">
+          <li class="sv" data-img="img/bouteille.webp">
             <button type="button" aria-expanded="false"><span class="ico"><svg><use href="#i-photo"/></svg></span><span class="name">Photographies</span><span class="meta label">III</span></button>
             <div class="more"><div><p class="ph">Des images soignées pour les cartes, les réseaux et les catalogues : bouteilles, service, lieux et soirées.</p>
               <ul class="chips label"><li>Exécutions</li><li>Ambiance</li><li>Produits</li><li>Événements</li></ul></div></div>
           </li>
         </ol>
         <div class="sv-visual" id="svvis" aria-hidden="true">
-          <img src="frames-hd/f_012.webp" alt="" class="on" loading="lazy">
+          <img src="img/cave.webp" alt="" class="on" loading="lazy">
           <span class="tag label">Image provisoire</span>
         </div>
       </div>
@@ -354,7 +354,7 @@ footer .ph{text-decoration-color:var(--or-clair)}
   <!-- FORMATIONS -->
   <section class="formations" id="formations">
     <div class="wrap grid">
-      <figure class="rise"><img src="frames-hd/f_060.webp" alt="Une bouteille de vin rouge versée dans un verre, dans une cave voûtée" data-par="0.12" loading="lazy"><figcaption class="label">Formation de produits</figcaption></figure>
+      <figure class="rise"><img src="img/versement.webp" alt="Une bouteille de vin rouge versée dans un verre, dans une cave voûtée" data-par="0.12" loading="lazy"><figcaption class="label">Formation de produits</figcaption></figure>
       <div class="txt rise">
         <p class="kicker label">Formations</p>
         <h2 class="big">Comprendre <span class="acc">ce qu'on goûte.</span></h2>
@@ -387,7 +387,7 @@ footer .ph{text-decoration-color:var(--or-clair)}
 
   <!-- CONTACT -->
   <section class="contact" id="contact">
-    <div class="bg"><img src="frames-hd/f_240.webp" alt="Des vignes au coucher du soleil" data-par="0.1" loading="lazy"></div>
+    <div class="bg"><img src="img/vignes.webp" alt="Des vignes au coucher du soleil" data-par="0.1" loading="lazy"></div>
     <div class="wrap inner">
       <div class="rise">
         <p class="kicker label">Contact</p>
@@ -429,12 +429,14 @@ footer .ph{text-decoration-color:var(--or-clair)}
 
 <script>
 (() => {
-  const FRAMES = 240, pad = n => String(n).padStart(3, "0");
+  /* Séquence : 477 images (48 i/s), regroupées par 8 sur 60 planches (2 colonnes × 4 rangées) */
+  const FRAMES = 477, PER = 8, COLS = 2, SHEETS = Math.ceil(FRAMES / PER);
+  const pad = n => String(n).padStart(3, "0");
   const HD = Math.max(innerWidth, innerHeight) * Math.min(devicePixelRatio || 1, 2) > 1400;
-  const DIR = HD ? "frames-hd" : "frames";
-  const src = i => `${DIR}/f_${pad(i + 1)}.webp`;
+  const FW = HD ? 1440 : 960, FH = HD ? 810 : 540;
+  const sheetSrc = s => `seq/${HD ? "hd" : "sd"}/s_${String(s + 1).padStart(2, "0")}.webp`;
   const VP = { x: 0.4975, y: 0.596 };             // point de fuite de l'allée centrale, en coordonnées image
-  const IMG_W = HD ? 1920 : 1024, IMG_H = HD ? 1080 : 576;
+  const IMG_W = FW, IMG_H = FH;
   const PAPER = [26, 15, 17];                     // --fond (la cave)
   const GOLD = "180,138,60", GOLD_LIGHT = "232,196,120";
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -447,34 +449,80 @@ footer .ph{text-decoration-color:var(--or-clair)}
   const hudbar = document.getElementById("hudbar"), hudfc = document.getElementById("hudfc"), hudch = document.getElementById("hudch"), hud = document.getElementById("hud");
   const hint = document.getElementById("hint"), nav = document.getElementById("nav"), veil = document.getElementById("veil");
 
-  /* ---------- Chargement des images ---------- */
-  const imgs = new Array(FRAMES);
-  let loaded = 0;
+  /* ---------- Chargement des planches ---------- */
+  const sheets = new Array(SHEETS);               // <img> (données compressées)
+  const bitmaps = new Map();                      // planches déjà décodées : index -> ImageBitmap
+  const pending = new Set();
+  let loaded = 0, curSheet = 0;
   const ldn = document.getElementById("ldn"), ldb = document.getElementById("ldb"), loader = document.getElementById("loader");
-  const onOne = () => {
+  const isOk = im => im && im.complete && im.naturalWidth > 0;
+  const onOne = s => () => {
     loaded++;
-    const pct = Math.round(loaded / FRAMES * 100);
+    const pct = Math.round(loaded / SHEETS * 100);
     ldn.textContent = pct; ldb.style.width = pct + "%";
-    if (loaded === 1) requestDraw();
-    if (loaded >= FRAMES) { loader.classList.add("done"); requestDraw(true); }
+    keepDecoded(curSheet);
+    if (s === 0) requestDraw(true);
+    if (loaded >= SHEETS) { loader.classList.add("done"); requestDraw(true); }
   };
-  for (let i = 0; i < FRAMES; i++) {
+  // Les planches sont téléchargées comme fichiers (Blob) : leur décodage par createImageBitmap
+  // se fait alors hors du fil principal. Si fetch n'est pas disponible (page ouverte en file://),
+  // on retombe sur de simples <img>.
+  const blobs = new Array(SHEETS);
+  function loadImg(s) {
     const im = new Image();
     im.decoding = "async";
-    im.onload = onOne; im.onerror = onOne;
-    im.src = src(i);
-    imgs[i] = im;
+    im.onload = onOne(s); im.onerror = onOne(s);
+    im.src = sheetSrc(s);
+    sheets[s] = im;
   }
-  setTimeout(() => loader.classList.add("done"), 12000);
+  (async () => {
+    const queue = [...Array(SHEETS).keys()];
+    const worker = async () => {
+      while (queue.length) {
+        const s = queue.shift();
+        try {
+          const r = await fetch(sheetSrc(s));
+          if (!r.ok) throw 0;
+          blobs[s] = await r.blob();
+          sheets[s] = { complete: true, naturalWidth: 1, blob: true };
+          onOne(s)();
+        } catch (e) { loadImg(s); }
+      }
+    };
+    await Promise.all([worker(), worker(), worker(), worker()]);
+  })();
+  setTimeout(() => loader.classList.add("done"), 15000);
 
-  const nearestLoaded = i => {
-    for (let d = 0; d < FRAMES; d++) {
-      const a = imgs[i - d], b = imgs[i + d];
-      if (a && a.complete && a.naturalWidth) return a;
-      if (b && b.complete && b.naturalWidth) return b;
+  // Décode à l'avance (hors du fil principal) les planches autour de la position courante,
+  // et libère les autres pour garder la mémoire basse.
+  const AHEAD = 3, BEHIND = 2;
+  let dir = 1;
+  function keepDecoded(c) {
+    const lo = c - (dir > 0 ? BEHIND : AHEAD), hi = c + (dir > 0 ? AHEAD : BEHIND);
+    for (const [s, bm] of bitmaps) if (s < lo - 1 || s > hi + 1) { bm.close && bm.close(); bitmaps.delete(s); }
+    if (!window.createImageBitmap) return;
+    for (let s = Math.max(0, lo); s <= Math.min(SHEETS - 1, hi); s++) {
+      if (bitmaps.has(s) || pending.has(s) || !isOk(sheets[s])) continue;
+      pending.add(s);
+      createImageBitmap(blobs[s] || sheets[s]).then(bm => {
+        pending.delete(s);
+        if (Math.abs(s - curSheet) > AHEAD + 2) { bm.close && bm.close(); return; }
+        bitmaps.set(s, bm); requestDraw(true);
+      }).catch(() => pending.delete(s));
     }
+  }
+  // Source dessinable pour l'image f : planche décodée en priorité, sinon <img>, sinon la plus proche décodée
+  function frameSource(f) {
+    const s = Math.floor(f / PER), k = f % PER;
+    const sx = (k % COLS) * FW, sy = Math.floor(k / COLS) * FH;
+    if (bitmaps.has(s)) return { src: bitmaps.get(s), sx, sy };
+    if (isOk(sheets[s]) && !sheets[s].blob && !window.createImageBitmap) return { src: sheets[s], sx, sy };
+    let best = null, bd = 1e9;
+    for (const [bs] of bitmaps) { const d = Math.abs(bs - s); if (d < bd) { bd = d; best = bs; } }
+    if (best !== null) { const ff = best < s ? best * PER + PER - 1 : best * PER; return frameSource(Math.min(ff, FRAMES - 1)); }
+    if (isOk(sheets[s]) && !sheets[s].blob) return { src: sheets[s], sx, sy };
     return null;
-  };
+  }
 
   /* ---------- Dimensions ---------- */
   let W = 0, H = 0, DPR = 1;
@@ -543,11 +591,13 @@ footer .ph{text-decoration-color:var(--or-clair)}
     fctx.fillStyle = "#120c0a"; fctx.fillRect(0, 0, W, H);
     fctx.save();
     fctx.translate(vpx, vpy); fctx.scale(scale, scale); fctx.translate(-vpx, -vpy);
-    const a = nearestLoaded(i0);
-    if (a) fctx.drawImage(a, box.x, box.y, box.w, box.h);
-    const b = imgs[i1];
-    if (t > 0.02 && i1 !== i0 && b && b.complete && b.naturalWidth) {
-      fctx.globalAlpha = t; fctx.drawImage(b, box.x, box.y, box.w, box.h); fctx.globalAlpha = 1;
+    const sh = Math.floor(i0 / PER);
+    if (sh !== curSheet) { dir = sh > curSheet ? 1 : -1; curSheet = sh; keepDecoded(sh); }
+    const a = frameSource(i0);
+    if (a) fctx.drawImage(a.src, a.sx, a.sy, FW, FH, box.x, box.y, box.w, box.h);
+    const b = t > 0.02 && i1 !== i0 ? frameSource(i1) : null;
+    if (b && (!a || b.src !== a.src || b.sx !== a.sx || b.sy !== a.sy)) {
+      fctx.globalAlpha = t; fctx.drawImage(b.src, b.sx, b.sy, FW, FH, box.x, box.y, box.w, box.h); fctx.globalAlpha = 1;
     }
     fctx.restore();
     // la page « devient papier »
