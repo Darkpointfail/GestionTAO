@@ -6,6 +6,7 @@ Site vitrine de Gestion TAO (Martin Beauchamp, fondateur et animateur) : formati
 
 - `index.html` : le site, une seule page sans dépendance (polices Google Fonts).
 - `seq/` : l'intro en 477 images (48 i/s, interpolées), regroupées par 4 sur 120 planches (2 × 2), en trois versions chargées selon l'écran : `xl` 2560 × 1440 (écrans Retina et 4K), `hd` 1920 × 1080, `mob` 1080 × 1800 (téléphone en portrait, cadrage vertical). Les planches sont décodées à l'avance hors du fil principal (createImageBitmap) pour un scroll sans saccade.
+- Intro par étapes : chaque geste (molette, trackpad, glissé, flèches) avance d'une étape, à vitesse plafonnée, et la vidéo s'arrête sur chaque titre (constante `STOPS` dans `index.html`). Un bouton « Passer l'intro » et des repères cliquables permettent d'aller plus vite.
 - `img/` : les photos des sections (extraites de la vidéo).
 - `video/intro-4k.mp4` : la vidéo d'intro agrandie en 4K (Real-ESRGAN, qualité maximale), `video/intro-source-480p.mp4` : l'originale.
 
