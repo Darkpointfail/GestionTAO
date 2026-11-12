@@ -604,26 +604,39 @@ footer .ph{text-decoration-color:var(--or-clair)}
   const easeOut = t => 1 - Math.pow(1 - t, 3);
   const lerp = (a, b, t) => a + (b - a) * t;
 
-  /* ---------- Pilotage de l'intro : des étapes, pas un scroll au pixel ----------
-     Chaque geste (molette, trackpad, glissé du doigt, flèche du clavier) lance la vidéo
-     jusqu'à l'étape suivante, à vitesse plafonnée et constante, et elle s'y arrête, titre lisible.
-     Un scroll violent ne fait avancer que d'une étape : on ne peut plus « zapper » l'intro.
-     Les arrêts tombent sur des images posées : la cave, le versement, le verre plein,
-     la bouteille et le verre, puis l'arrivée dans les vignes. */
+  /* ---------- Pilotage de l'intro : un mouvement continu ----------
+     La molette, le trackpad, le doigt ou le clavier poussent une position « virtuelle » ;
+     la vidéo la suit avec de l'inertie et une vitesse plafonnée : elle ne saute jamais
+     et ne s'arrête jamais net. Autour de chaque titre, la vidéo passe au ralenti
+     (le même geste la fait moins avancer), donc le titre se lit sans que l'image se fige.
+     Quand on lâche entre deux titres, elle glisse doucement jusqu'au titre suivant ;
+     au repos sur un titre, elle continue au ralenti et l'image « respire ». */
   const STOPS = [0, 0.205, 0.369, 0.541, 1];
   const NAMES = ["Ouverture", "Formations", "Dégustations", "Photographies", "L'univers TAO"];
-  const VMAX = 0.2, ACC = 0.5;       // en « intro par seconde » : 0,2 ≈ 120 images/s au plus
   const LAST = STOPS.length - 1;
-  let cur = 0, vel = 0, goal = 0, stopIdx = 0, moving = false, arrivedAt = 0, lastT = 0, raf = 0, force = false;
+  const SLOW = 0.2, ZW = 0.03, ZONE = 0.024;     // ralenti au centre d'un titre, largeur de la zone
+  const speedAt = p => { let b = 0; for (const s of STOPS) b = Math.max(b, Math.exp(-Math.pow((p - s) / ZW, 4))); return 1 - (1 - SLOW) * b; };
+  // table position vidéo p -> position virtuelle u (u avance plus vite que p dans les zones de titre)
+  const NT = 2000, UT = new Float64Array(NT + 1);
+  for (let k = 1; k <= NT; k++) UT[k] = UT[k - 1] + (1 / NT) / speedAt((k - 0.5) / NT);
+  const U_END = UT[NT];
+  const toU = p => { const x = clamp(p) * NT, k = Math.min(NT - 1, Math.floor(x)); return UT[k] + (UT[k + 1] - UT[k]) * (x - k); };
+  const toP = u => { u = clamp(u, 0, U_END); let lo = 0, hi = NT; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (UT[m] <= u) lo = m; else hi = m; } return (lo + (u - UT[lo]) / (UT[hi] - UT[lo])) / NT; };
+  const SU = STOPS.map(toU);
+  const VMAX = 0.2, ACC = 0.9, K = 3.2, LEAD = 0.13, DRIFT = 0.035;
+  const WHEEL = 1 / 3400, TOUCH = 1 / 1500;
+  let uc = 0, ut = 0, vel = 0, cur = 0, lastDir = 1, lastInput = 0, snapped = true, drifting = false, endAt = 0;
+  let raf = 0, force = false, lastT = 0, zoneIdx = 0;
   let mode = "intro", capturing = false, autoScroll = false;
   const stage = document.getElementById("stage"), skip = document.getElementById("skip");
   const isReady = () => loader.classList.contains("done");
+  const nextU = (u, s) => s > 0 ? (SU.find(x => x > u + 0.01) ?? U_END) : ([...SU].reverse().find(x => x < u - 0.01) ?? 0);
 
   // Ralentit si les images nettes à venir ne sont pas encore décodées (comme une vidéo qui « bufferise »)
   function readiness(d) {
     if (cur >= VIDEO_END || !window.createImageBitmap) return 1;
     const s = Math.floor(cur / VIDEO_END * (FRAMES - 1) / PER);
-    const gs = Math.floor(Math.min(goal, VIDEO_END) / VIDEO_END * (FRAMES - 1) / PER);
+    const gs = Math.floor(Math.min(toP(ut), VIDEO_END) / VIDEO_END * (FRAMES - 1) / PER);
     const caps = [0.12, 0.12, 0.45, 0.8];
     for (let k = 0; k <= 3; k++) {
       const t = s + d * k;
@@ -633,57 +646,62 @@ footer .ph{text-decoration-color:var(--or-clair)}
     return 1;
   }
 
+  // Geste de l'utilisateur : déplace la cible, jamais à plus de LEAD devant la vidéo
+  // (un scroll violent ne part donc pas en roue libre)
+  function push(du) {
+    if (!isReady() || mode !== "intro" || !du) return;
+    lastInput = performance.now(); snapped = false; drifting = false;
+    lastDir = du > 0 ? 1 : -1;
+    ut = clamp(clamp(ut + du, uc - LEAD, uc + LEAD), 0, U_END);
+    requestDraw();
+  }
+  function aim(u) { ut = clamp(u, 0, U_END); lastInput = performance.now(); snapped = true; drifting = false; lastDir = ut >= uc ? 1 : -1; requestDraw(); }
+
   function requestDraw(f) { if (f) force = true; if (!raf) raf = requestAnimationFrame(tick); }
   function tick(now) {
     raf = 0;
     const dt = lastT ? Math.min(0.05, (now - lastT) / 1000) : 1 / 60;
     lastT = now;
-    if (moving) {
-      const d = goal > cur ? 1 : -1;
-      if (reduce) cur = goal;
-      else {
-        // accélère jusqu'à VMAX, puis freine pour s'arrêter pile sur l'étape
-        const r = Math.abs(goal - cur);
-        const want = d * Math.max(0.012, Math.min(VMAX * readiness(d), Math.sqrt(2 * ACC * r)));
-        const lim = ACC * dt * (Math.abs(want) < Math.abs(vel) ? 2 : 1);
-        vel += Math.max(-lim, Math.min(lim, want - vel));
-        cur += vel * dt;
-        if ((goal - cur) * d <= 0.0003) cur = goal;
+    if (mode !== "site") {
+      const idle = performance.now() - lastInput;
+      // lâché entre deux titres : la vidéo glisse jusqu'au titre suivant, dans le sens du geste
+      // lâché sur un titre : on reste dans sa zone (la vidéo finit son ralenti sans repartir)
+      if (!snapped && idle > 220) {
+        snapped = true;
+        const pt = toP(ut), pc = toP(uc);
+        const kc = STOPS.findIndex(x => Math.abs(pc - x) < ZONE);
+        if (kc >= 0) ut = clamp(ut, toU(STOPS[kc] - ZONE * 0.85), toU(STOPS[kc] + ZONE * 0.85));
+        else if (!STOPS.some(x => Math.abs(pt - x) < ZONE)) ut = nextU(uc, lastDir);
       }
-      if (cur === goal) { moving = false; vel = 0; arrivedAt = performance.now(); stopIdx = STOPS.indexOf(goal); marks(); }
+      // au repos sur un titre : la vidéo continue au ralenti, sans dépasser la fin du titre
+      const p0 = toP(uc);
+      const k = STOPS.findIndex(x => Math.abs(p0 - x) < ZONE);
+      if (idle > 900 && snapped && k >= 0 && k < LAST && (drifting || Math.abs(ut - uc) < 0.004)) {
+        drifting = true;
+        const lim = toU(STOPS[k] + ZONE * 0.85);
+        if (ut < lim) ut = Math.min(lim, ut + DRIFT * dt);
+      }
+      // suivi avec inertie et vitesse plafonnée
+      const d = ut - uc;
+      if (reduce) { uc = ut; vel = 0; }
+      else if (Math.abs(d) > 2e-4 || Math.abs(vel) > 2e-3) {
+        const cap = VMAX * readiness(d > 0 ? 1 : -1);
+        const want = clamp(d * K, -cap, cap);
+        const lim = ACC * dt * (Math.abs(want) < Math.abs(vel) ? 2.5 : 1);
+        vel += clamp(want - vel, -lim, lim);
+        uc = clamp(uc + vel * dt, 0, U_END);
+      } else { uc = ut; vel = 0; }
+      cur = toP(uc);
+      if (uc >= U_END - 2e-3) { if (!endAt) endAt = performance.now(); } else endAt = 0;
+      const z = STOPS.findIndex(x => Math.abs(cur - x) < ZONE);
+      if (z !== zoneIdx) { zoneIdx = z; marks(); }
     }
     render(cur);
-    if (moving || force) { force = false; raf = requestAnimationFrame(tick); } else lastT = 0;
+    // dans l'intro, on redessine en continu : l'image n'est jamais figée
+    if (mode !== "site" || force) { force = false; raf = requestAnimationFrame(tick); } else lastT = 0;
   }
 
-  function goTo(i) {
-    i = Math.max(0, Math.min(LAST, i));
-    goal = STOPS[i]; stopIdx = i;
-    if (goal === cur) { moving = false; marks(); return; }
-    dir = goal > cur ? 1 : -1; moving = true;
-    keepDecoded(curSheet); marks(); requestDraw();
-  }
-  // Un geste = une étape. Pendant le trajet, un geste dans le même sens est ignoré ;
-  // un geste en sens inverse fait demi-tour vers l'étape qu'on vient de quitter.
-  function step(s) {
-    if (!isReady() || mode !== "intro") return false;
-    if (moving) {
-      if (s !== (goal > cur ? 1 : -1)) {
-        let i = -1;
-        if (s > 0) i = STOPS.findIndex(p => p > cur + 1e-4);
-        else for (let k = LAST; k >= 0; k--) if (STOPS[k] < cur - 1e-4) { i = k; break; }
-        goTo(i < 0 ? (s > 0 ? LAST : 0) : i);
-      }
-      return true;
-    }
-    if (performance.now() - arrivedAt < 320) return false;
-    if (s > 0 && stopIdx === LAST) { leave(); return true; }
-    if (s < 0 && stopIdx === 0) return true;
-    goTo(stopIdx + s);
-    return true;
-  }
-
-  // Défilement automatique doux (sortie vers le site, retour en haut)
+  // Défilement automatique doux (sortie vers le site au toucher, retour en haut)
   let sa = 0;
   function scrollAnim(to, ms, done) {
     cancelAnimationFrame(sa); autoScroll = true;
@@ -698,77 +716,75 @@ footer .ph{text-decoration-color:var(--or-clair)}
   }
   function leave(then) {
     setMode("exiting");
-    scrollAnim(intro.offsetHeight, 1100, () => { setMode("site"); then && then(); });
+    scrollAnim(intro.offsetHeight, 1000, () => { setMode("site"); then && then(); });
   }
-  // Retour dans l'intro en remontant tout en haut du site : on reprend sur la dernière étape
+  function place(u) { uc = ut = u; vel = 0; cur = toP(u); endAt = u >= U_END - 2e-3 ? performance.now() : 0; zoneIdx = STOPS.findIndex(x => Math.abs(cur - x) < ZONE); }
+  // Retour dans l'intro en remontant tout en haut du site : on repart de la fin, en continu
   function enter() {
+    place(U_END); lastInput = performance.now(); snapped = true;
     setMode("intro");
-    stopIdx = LAST; arrivedAt = performance.now();
-    gestureUsed = true; lastWheelT = performance.now(); lastAbs = 1e9; touchUsed = true;
-    marks();
   }
-  // Saut direct avec un court fondu (bouton « Passer l'intro », liens du menu)
+  // Saut direct avec un court fondu (bouton « Passer l'intro », liens du menu, logo)
   function cut(i, then) {
     stage.style.transition = "opacity .3s ease"; stage.style.opacity = "0";
     setTimeout(() => {
-      moving = false; vel = 0; goal = cur = STOPS[i]; stopIdx = i; arrivedAt = performance.now();
+      place(SU[i]); lastInput = performance.now(); snapped = true;
       keepDecoded(Math.floor(Math.min(cur, VIDEO_END) / VIDEO_END * (FRAMES - 1) / PER));
       render(cur); marks(); stage.style.opacity = "1";
       then && then();
     }, reduce ? 0 : 320);
   }
 
-  /* Repères : un point par étape sur la barre de droite */
+  /* Repères : un point par titre sur la barre de droite */
   const track = document.getElementById("hudtrack");
   const dots = STOPS.map((p, i) => {
     const b = document.createElement("button");
     b.type = "button"; b.className = "dot"; b.style.top = (p * 100) + "%";
     b.setAttribute("aria-label", NAMES[i]);
-    b.addEventListener("click", () => { if (mode === "intro" && isReady()) goTo(i); });
+    b.addEventListener("click", () => { if (mode === "intro" && isReady()) aim(SU[i]); });
     track.appendChild(b);
     return b;
   });
   function marks() {
-    dots.forEach((b, i) => { b.classList.toggle("on", i === stopIdx); b.classList.toggle("past", STOPS[i] < cur); b.setAttribute("aria-current", i === stopIdx ? "step" : "false"); });
-    skip.classList.toggle("off", mode !== "intro" || stopIdx === LAST);
+    dots.forEach((b, i) => { b.classList.toggle("on", i === zoneIdx); b.classList.toggle("past", STOPS[i] < cur - 1e-3); b.setAttribute("aria-current", i === zoneIdx ? "step" : "false"); });
+    skip.classList.toggle("off", mode !== "intro" || cur > 0.9);
   }
-  window.__intro = () => ({ cur, goal, mode, stopIdx, moving, vel });
+  window.__intro = () => ({ cur, uc, ut, mode, zone: zoneIdx, vel });
   skip.addEventListener("click", () => { if (mode === "intro") cut(LAST, () => leave()); });
 
-  /* Molette et trackpad */
+  /* Molette et trackpad : chaque cran pousse la vidéo, sans jamais être ignoré */
   const WOPT = { passive: false };
-  let lastWheelT = 0, lastAbs = 0, accum = 0, gestureUsed = false;
+  let overflow = 0;
   function onWheel(e) {
     if (e.ctrlKey) return;                       // zoom au trackpad : on laisse faire
-    e.preventDefault();
-    if (mode !== "intro") return;
-    const now = performance.now();
     let d = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : 0;
     d *= e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? H : 1;
-    const ad = Math.abs(d), gap = now - lastWheelT;
-    // nouveau geste : une pause, ou une impulsion nettement plus forte que l'inertie en cours
-    const fresh = (gap > 160 && ad >= 4) || (ad > lastAbs * 2 && ad > 20);
-    lastWheelT = now; lastAbs = ad;
-    if (fresh) { gestureUsed = false; accum = 0; }
-    // l'inertie du geste déjà utilisé ne compte pas ; une molette qu'on continue de tourner
-    // repart seulement après un vrai temps d'arrêt sur le titre
-    if (gestureUsed && (moving || now - arrivedAt < 1200 || ad < 16)) return;
-    accum += d;
-    if (Math.abs(accum) < 12) return;
-    const s = accum > 0 ? 1 : -1; accum = 0;
-    if (step(s)) gestureUsed = true;
+    // arrivé au bout de l'intro, on continue de scroller : la page prend le relais naturellement
+    if (mode === "intro" && d > 0 && endAt && performance.now() - endAt > 450) {
+      overflow += d;
+      if (overflow > 120) { overflow = 0; setMode("site"); return; }
+    } else overflow = 0;
+    e.preventDefault();
+    if (mode === "intro") push(d * WHEEL);
   }
-  /* Doigt sur écran tactile */
-  let ty = null, touchUsed = false;
-  addEventListener("touchstart", e => { ty = e.touches[0].clientY; touchUsed = false; }, { passive: true });
+  /* Doigt sur écran tactile : la vidéo suit le doigt, puis l'élan quand on le lâche */
+  let ty = null, tlast = 0, tvel = 0, tover = 0;
+  addEventListener("touchstart", e => { ty = e.touches[0].clientY; tlast = performance.now(); tvel = 0; tover = 0; }, { passive: true });
   function onTouchMove(e) {
     if (e.touches.length > 1) return;            // pincer pour zoomer reste possible
     e.preventDefault();
-    if (mode !== "intro" || touchUsed || ty === null) return;
-    const dy = ty - e.touches[0].clientY;
-    if (Math.abs(dy) < 36) return;
-    if (step(dy > 0 ? 1 : -1)) touchUsed = true;
+    if (mode !== "intro" || ty === null) return;
+    const y = e.touches[0].clientY, now = performance.now();
+    const dy = ty - y, dtm = Math.max(1, now - tlast);
+    ty = y; tlast = now;
+    tvel = 0.6 * tvel + 0.4 * (dy / dtm * 1000);
+    if (dy > 0 && endAt && now - endAt > 450) { tover += dy; if (tover > 40) { ty = null; leave(); } return; }
+    push(dy * TOUCH);
   }
+  addEventListener("touchend", () => {
+    if (mode === "intro" && ty !== null && performance.now() - tlast < 90) push(clamp(tvel, -2600, 2600) * TOUCH * 0.3);
+    ty = null;
+  }, { passive: true });
   function setMode(m) {
     mode = m;
     const want = m !== "site";
@@ -779,8 +795,9 @@ footer .ph{text-decoration-color:var(--or-clair)}
     }
     document.documentElement.classList.toggle("in-intro", want);
     marks();
+    if (want) requestDraw();
   }
-  /* Clavier */
+  /* Clavier : flèches et Espace vont d'un titre à l'autre, en douceur */
   addEventListener("keydown", e => {
     if (mode === "site" || e.metaKey || e.ctrlKey || e.altKey) return;
     if (e.target.closest && e.target.closest("input,select,textarea")) return;
@@ -791,10 +808,10 @@ footer .ph{text-decoration-color:var(--or-clair)}
     if (k === " " && e.target.closest && e.target.closest("button,a")) return;
     e.preventDefault();
     if (mode !== "intro" || !isReady()) return;
-    if (k === "Home") return goTo(0);
-    if (k === "End") return goTo(LAST);
-    if (e.repeat && (moving || performance.now() - arrivedAt < 1200)) return;
-    step(fwd ? 1 : -1);
+    if (k === "Home") return aim(0);
+    if (k === "End") return aim(U_END);
+    if (fwd && endAt && !e.repeat) return leave();
+    aim(nextU(uc, fwd ? 1 : -1));
   });
 
   function render(p) {
@@ -802,7 +819,8 @@ footer .ph{text-decoration-color:var(--or-clair)}
     const fp = clamp(p / VIDEO_END) * (FRAMES - 1);
     const i0 = Math.floor(fp), i1 = Math.min(FRAMES - 1, i0 + 1), t = fp - i0;
     const z = ease(seg(p, VIDEO_END - 0.02, ZOOM_END));
-    const scale = 1 + z * 1.25;
+    const breathe = reduce ? 0 : (1 - z) * 0.022 * (0.5 - 0.5 * Math.cos(performance.now() / 1000 * 2 * Math.PI / 14));
+    const scale = (1 + z * 1.25) * (1 + breathe);
     const vpx = box.x + VP.x * box.w, vpy = box.y + VP.y * box.h;
 
     fctx.setTransform(DPR, 0, 0, DPR, 0, 0);
@@ -874,7 +892,7 @@ footer .ph{text-decoration-color:var(--or-clair)}
       if (mode === "site" && y <= 0 && prevY > 0) enter();
       else if (mode === "intro" && y > 4) {
         // la page a défilé sans passer par nous (barre de défilement, touche Tab…) : on sort de l'intro
-        moving = false; vel = 0; goal = cur = 1; stopIdx = LAST; render(cur); setMode("site");
+        place(U_END); render(cur); setMode("site");
       }
     }
     prevY = y;
@@ -887,7 +905,7 @@ footer .ph{text-decoration-color:var(--or-clair)}
     if (id === "#top") {
       e.preventDefault();
       if (mode === "site") scrollAnim(0, 900, () => { enter(); cut(0); });
-      else if (mode === "intro" && stopIdx !== 0) cut(0);
+      else if (mode === "intro" && uc > 0) cut(0);
       return;
     }
     const el = document.querySelector(id);
@@ -898,7 +916,7 @@ footer .ph{text-decoration-color:var(--or-clair)}
   addEventListener("resize", resize);
   if ("scrollRestoration" in history) history.scrollRestoration = "manual";
   const startEl = location.hash && location.hash !== "#top" && document.querySelector(location.hash);
-  if (startEl) { goal = cur = 1; stopIdx = LAST; setMode("site"); }
+  if (startEl) { place(U_END); setMode("site"); }
   else { scrollTo(0, 0); setMode("intro"); }
   resize();
 
