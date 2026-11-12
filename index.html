@@ -494,10 +494,16 @@ footer .ph{text-decoration-color:var(--or-clair)}
     sheets[s] = im;
   }
   (async () => {
-    const queue = [...Array(SHEETS).keys()];
+    // téléchargement par priorité : d'abord les planches juste devant la position courante
+    const todo = new Set([...Array(SHEETS).keys()]);
+    const next = () => {
+      let best = -1, bd = 1e9;
+      for (const s of todo) { const d = s >= curSheet ? s - curSheet : (curSheet - s) * 3; if (d < bd) { bd = d; best = s; } }
+      todo.delete(best); return best;
+    };
     const worker = async () => {
-      while (queue.length) {
-        const s = queue.shift();
+      while (todo.size) {
+        const s = next();
         try {
           const r = await fetch(sheetSrc(s));
           if (!r.ok) throw 0;
@@ -513,7 +519,7 @@ footer .ph{text-decoration-color:var(--or-clair)}
 
   // Décode à l'avance (hors du fil principal) les planches autour de la position courante,
   // et libère les autres pour garder la mémoire basse.
-  const AHEAD = TIER === "hd" ? 4 : 3, BEHIND = TIER === "hd" ? 2 : 1;
+  const AHEAD = TIER === "mob" ? 5 : TIER === "xl" ? 6 : 7, BEHIND = 1;
   let dir = 1, pinned = -1;   // pinned : dernière planche affichée, jamais libérée
   function keepDecoded(c) {
     const lo = c - (dir > 0 ? BEHIND : AHEAD), hi = c + (dir > 0 ? AHEAD : BEHIND);
@@ -535,12 +541,14 @@ footer .ph{text-decoration-color:var(--or-clair)}
     const sx = (k % COLS) * FW, sy = Math.floor(k / COLS) * FH;
     if (bitmaps.has(s)) return { src: bitmaps.get(s), sx, sy, sw: FW, sh: FH, sheet: s };
     if (isOk(sheets[s]) && !sheets[s].blob && !window.createImageBitmap) return { src: sheets[s], sx, sy, sw: FW, sh: FH };
-    // image pas encore prête : vignette de la même image (légèrement floue, mais au bon endroit)
-    if (thumbs) return { src: thumbs, sx: (f % TCOLS) * TW, sy: Math.floor(f / TCOLS) * TH, sw: TW, sh: TH, thumb: true };
-    // sinon, la planche décodée la plus proche
+    // image pas encore prête : d'abord une image nette toute proche (décalage de quelques images, invisible),
+    // sinon la vignette de la bonne image, sinon la planche décodée la plus proche.
     let best = null, bd = 1e9;
     for (const [bs] of bitmaps) { const d = Math.abs(bs - s); if (d < bd) { bd = d; best = bs; } }
-    if (best !== null) { const ff = best < s ? best * PER + PER - 1 : best * PER; return frameSource(Math.min(ff, FRAMES - 1)); }
+    const nearFrame = best === null ? -1 : Math.min(best < s ? best * PER + PER - 1 : best * PER, FRAMES - 1);
+    if (best !== null && Math.abs(nearFrame - f) <= 10) return frameSource(nearFrame);
+    if (thumbs) return { src: thumbs, sx: (f % TCOLS) * TW, sy: Math.floor(f / TCOLS) * TH, sw: TW, sh: TH, thumb: true };
+    if (best !== null) return frameSource(nearFrame);
     if (isOk(sheets[s]) && !sheets[s].blob) return { src: sheets[s], sx, sy, sw: FW, sh: FH };
     return null;
   }
@@ -594,7 +602,11 @@ footer .ph{text-decoration-color:var(--or-clair)}
     raf = 0;
     target = progress();
     const d = target - cur;
-    cur = reduce ? target : cur + d * 0.14;
+    let step = reduce ? d : d * 0.14;
+    // dans la vidéo, au plus 2 images par rafraîchissement : un scroll brutal devient une avance rapide fluide
+    const maxStep = 2 * VIDEO_END / (FRAMES - 1);
+    if (!reduce && cur < VIDEO_END && target < VIDEO_END + 0.05) step = Math.max(-maxStep, Math.min(maxStep, step));
+    cur += step;
     if (Math.abs(d) < 0.0002) cur = target;
     render(cur);
     if (cur !== target || force) { force = false; raf = requestAnimationFrame(tick); }
