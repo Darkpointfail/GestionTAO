@@ -114,94 +114,115 @@ main,footer{position:relative;z-index:1}
 @keyframes drip{0%{transform:scaleY(0)}50%{transform:scaleY(1)}100%{transform:scaleY(1);opacity:0}}
 @media (max-width:760px){.hud{gap:0}.hud #hudch,.hud .fc{display:none}.hud .track{height:20vh}.skip{bottom:auto;top:calc(78px + env(safe-area-inset-top,0px));padding:9px 12px;font-size:9px}.ch-end .who{font-size:10px;letter-spacing:.14em}.ch-end .sub span+span::before{margin-right:9px}.ch-end .sub{gap:8px 9px;font-size:10px;letter-spacing:.1em;flex-wrap:nowrap}}
 
-/* ===== Sections ===== */
-.wrap{padding-left:var(--gx);padding-right:var(--gxr);max-width:1440px;margin:0 auto}
+/* ===== Après l'intro =====
+   Layout : la vidéo se prolonge en « carte » de trois panneaux photo plein écran qui s'empilent
+   (chaque service recouvre le précédent, qui recule dans l'ombre), puis des sections calmes
+   sur le fond de cave, la grille de rangs dorés en filigrane, et un contact au coucher du soleil. */
+:root{--pad:max(20px, min(4vw, 64px), env(safe-area-inset-left, 0px));--padr:max(20px, min(4vw, 64px), env(safe-area-inset-right, 0px))}
+.wrap{padding-left:var(--pad);padding-right:var(--padr);max-width:1440px;margin:0 auto}
 section{position:relative}
-.kicker{display:flex;align-items:center;gap:14px;color:var(--or-txt);margin:0 0 30px}
+.kicker{display:flex;align-items:center;gap:14px;color:var(--or-txt);margin:0 0 26px}
 .kicker::after{content:"";height:1px;width:64px;background:var(--or)}
 h2.big{font-family:var(--f-display);font-weight:500;font-size:clamp(34px,5.2vw,76px);line-height:1.04;letter-spacing:.02em;margin:0;text-wrap:balance;color:var(--titre)}
 h2.big .acc{color:var(--or-txt);font-size:1.12em}
+.btn{all:unset;box-sizing:border-box;cursor:pointer;display:inline-flex;align-items:center;gap:14px;font:600 11px/1 var(--f-text);letter-spacing:.18em;text-transform:uppercase;padding:17px 22px;border-radius:999px;background:var(--bordeaux);color:var(--ivoire);transition:background .3s,color .3s}
+.btn::after{content:"";width:18px;height:1px;background:currentColor;transition:width .3s}
+.btn:hover{background:var(--or);color:var(--nuit)}
+.btn:hover::after{width:28px}
+.btn:focus-visible{outline:1px solid var(--or-clair);outline-offset:4px}
 
-/* Manifeste */
-.manifeste{padding-block:22vh 16vh}
-.manifeste p.lead{font-family:var(--f-accent);font-style:italic;font-weight:500;font-size:clamp(32px,4.6vw,66px);line-height:1.1;margin:0;max-width:1100px;color:var(--titre);text-wrap:pretty}
-.manifeste .w{opacity:.2;transition:opacity .25s linear}
-.manifeste .w.on{opacity:1}
-.manifeste .sig{margin-top:52px;display:flex;flex-wrap:wrap;align-items:center;gap:12px 40px;color:var(--texte-2)}
-.manifeste .sig b{color:var(--or-txt);font-weight:600}
+/* La carte : panneaux plein écran empilés */
+.carte{position:relative;background:var(--nuit)}
+.pan{position:sticky;top:0;height:100vh;height:100svh;overflow:hidden}
+.pan-in{position:absolute;inset:0;overflow:hidden;transform-origin:50% 0%;background:var(--nuit);will-change:transform}
+.pan-in > img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:var(--pos,50% 50%);will-change:transform}
+.pan-in::before{content:"";position:absolute;inset:0;z-index:1;background:
+  linear-gradient(180deg,rgba(18,12,10,.6) 0%,rgba(18,12,10,0) 24%,rgba(18,12,10,0) 42%,rgba(18,12,10,.9) 100%),
+  linear-gradient(90deg,rgba(18,12,10,.5) 0%,rgba(18,12,10,0) 55%)}
+.pan-in::after{content:"";position:absolute;inset:0;z-index:3;background:#0c0807;opacity:var(--dim,0);pointer-events:none}
+.pan-body{position:absolute;inset:0;z-index:2;display:grid;grid-template-columns:minmax(0,1fr) minmax(220px,300px);grid-template-rows:1fr auto;gap:28px 56px;padding:calc(104px + env(safe-area-inset-top,0px)) var(--padr) calc(76px + env(safe-area-inset-bottom,0px)) var(--pad);color:var(--ivoire)}
+.pan-list{grid-column:2;grid-row:1;align-self:start;list-style:none;margin:0;padding:0;border-top:1px solid rgba(220,182,108,.55)}
+.pan-list li{font:italic 500 clamp(20px,1.7vw,27px)/1.1 var(--f-accent);padding:14px 0;border-bottom:1px solid rgba(220,182,108,.25);color:var(--ivoire)}
+.pan-copy{grid-column:1 / -1;grid-row:2;display:grid;gap:22px;min-width:0}
+.pan-copy .eyebrow{margin:0;color:var(--or-clair)}
+.pan-copy h2{font:500 clamp(36px,8.4vw,150px)/.9 var(--f-display);letter-spacing:.03em;margin:0;text-shadow:0 4px 40px rgba(10,7,6,.45);overflow-wrap:anywhere}
+.pan-foot{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:20px 40px;padding-top:22px;border-top:1px solid rgba(245,239,228,.18)}
+.pan-foot p{margin:0;max-width:52ch;font-size:clamp(15px,1.15vw,18px);line-height:1.6;color:rgba(245,239,228,.88)}
+.pan-tag{position:absolute;z-index:2;left:var(--pad);top:calc(96px + env(safe-area-inset-top,0px));color:rgba(245,239,228,.62)}
+@media (max-width:760px){
+  .pan-body{grid-template-columns:1fr;grid-template-rows:1fr auto auto;gap:18px;padding-top:calc(150px + env(safe-area-inset-top,0px));padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
+  .pan-copy{grid-row:2;gap:14px}
+  .pan-copy h2{font-size:clamp(34px,9.6vw,64px)}
+  .pan-list{grid-column:1;grid-row:3;display:flex;flex-wrap:wrap;gap:6px 10px;border:0}
+  .pan-list li{font:500 10px/1.4 var(--f-text);letter-spacing:.16em;text-transform:uppercase;padding:0;border:0;color:var(--or-clair)}
+  .pan-list li+li::before{content:"|";margin-right:10px;color:rgba(245,239,228,.5)}
+  .pan-foot{padding-top:16px}
+  .pan-foot .btn{width:100%;justify-content:center}
+}
 
-/* Services */
-.services{padding-block:10vh 16vh}
-.services .head{display:flex;justify-content:space-between;align-items:end;gap:24px;flex-wrap:wrap;margin-bottom:56px}
-.services .head p{margin:0;max-width:38ch;color:var(--texte-2)}
-.sv-layout{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:48px;align-items:start}
-.sv-list{list-style:none;margin:0;padding:0;border-top:1px solid var(--trait)}
-.sv{border-bottom:1px solid var(--trait)}
-.sv button{all:unset;box-sizing:border-box;cursor:pointer;display:grid;grid-template-columns:56px minmax(0,1fr) auto;gap:18px;align-items:center;width:100%;padding:26px 0;transition:padding .4s cubic-bezier(.2,.7,.2,1)}
-.sv button:focus-visible{outline:1px solid var(--or);outline-offset:2px}
-.sv .ico{width:48px;height:48px;border:1px solid var(--or);border-radius:50%;display:grid;place-items:center;color:var(--or-txt);transition:background .3s,color .3s}
-.sv .ico svg{width:22px;height:22px}
-.sv .name{font:500 clamp(22px,2.6vw,36px)/1.1 var(--f-display);letter-spacing:.03em;color:var(--titre);transition:color .3s}
-.sv .meta{color:var(--or-txt);text-align:right}
-.sv .more{padding-left:74px;display:grid;grid-template-rows:0fr;transition:grid-template-rows .5s cubic-bezier(.2,.7,.2,1)}
-.sv .more > div{overflow:hidden;color:var(--texte);max-width:58ch}
-.sv .more p{margin:0 0 14px}
-.sv .chips{display:flex;flex-wrap:wrap;gap:8px;list-style:none;margin:0;padding:0}
-.sv .chips li{border:1px solid var(--trait);border-radius:999px;padding:6px 12px;color:var(--or-txt)}
-.sv.active .ico{background:var(--bordeaux);border-color:var(--or);color:var(--ivoire)}
-.sv.active .name{color:var(--or-txt)}
-.sv.active button{padding-left:8px}
-.sv.active .more{grid-template-rows:1fr}
-.sv.active .more > div{padding-bottom:28px}
-.sv-visual{position:sticky;top:110px;aspect-ratio:3/4;overflow:hidden;border-radius:14px;background:var(--fond-2);box-shadow:0 40px 80px -30px rgba(0,0,0,.7)}
-.sv-visual img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transform:scale(1.06);transition:opacity .8s ease,transform 1.4s cubic-bezier(.2,.7,.2,1)}
-.sv-visual img.on{opacity:1;transform:scale(1)}
-.sv-visual .tag{position:absolute;right:14px;bottom:14px;color:var(--ivoire);background:rgba(18,12,10,.55);padding:8px 11px;border-radius:999px;font-size:10px}
-@media (max-width:860px){.sv-layout{grid-template-columns:1fr}.sv-visual{position:relative;top:0;aspect-ratio:16/10;order:-1}.sv button{grid-template-columns:48px minmax(0,1fr)}.sv .meta{grid-column:2;text-align:left}.sv .more{padding-left:0}}
+/* L'animateur */
+.anim{padding-block:20vh 14vh}
+.anim-grid{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:clamp(32px,6vw,96px);align-items:center}
+.portrait{margin:0;position:relative;aspect-ratio:4/5;max-width:100%;overflow:hidden;border-radius:2px}
+.portrait img{width:100%;height:100%;object-fit:cover;object-position:46% 50%;filter:saturate(.9)}
+.portrait figcaption{position:absolute;left:14px;bottom:14px;padding:7px 10px;border-radius:999px;background:rgba(18,12,10,.72);color:var(--or-clair)}
+.portrait::after{content:"";position:absolute;inset:12px;border:1px solid rgba(220,182,108,.45);pointer-events:none}
+.anim-txt{min-width:0}
+.anim-txt .role{margin:16px 0 0;color:var(--or-txt)}
+.anim-txt blockquote{margin:44px 0 0;font:italic 500 clamp(28px,3.4vw,50px)/1.15 var(--f-accent);color:var(--titre);text-wrap:balance}
+.anim-txt .bio{margin:26px 0 0;max-width:58ch;color:var(--texte-2)}
+.facts{margin:40px 0 0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border-top:1px solid var(--trait)}
+.facts div{padding:18px 18px 0 0;display:grid;gap:8px;min-width:0}
+.facts div+div{padding-left:18px;border-left:1px solid var(--trait)}
+.facts dt{color:var(--or-txt)}
+.facts dd{margin:0;font-size:15px;color:var(--texte)}
+@media (max-width:860px){.anim-grid{grid-template-columns:1fr}.portrait{aspect-ratio:4/3}.facts{grid-template-columns:1fr}.facts div+div{padding-left:0;border-left:0;border-top:1px solid var(--trait)}.facts div{padding-bottom:16px}}
 
-/* Formations */
-.formations{padding-block:8vh 16vh}
-.formations .grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:24px;align-items:end}
-.formations figure{grid-column:1 / span 6;margin:0;position:relative;overflow:hidden;aspect-ratio:4/5;border-radius:14px}
-.formations figure img{position:absolute;inset:-12% 0;width:100%;height:124%;object-fit:cover;will-change:transform}
-.formations figcaption{position:absolute;left:16px;bottom:14px;color:var(--ivoire)}
-.formations .txt{grid-column:8 / span 5;display:grid;gap:26px;min-width:0}
-.formations .txt > p{margin:0;color:var(--texte);max-width:46ch}
-.specs{display:grid;margin:0;border-top:1px solid var(--trait)}
-.specs div{display:flex;justify-content:space-between;align-items:baseline;gap:16px;padding:15px 0;border-bottom:1px solid var(--trait)}
-.specs dt{color:var(--or-txt)}
-.specs dd{margin:0;font-size:14px;color:var(--texte-2);text-align:right}
-@media (max-width:860px){.formations .grid{grid-template-columns:1fr}.formations figure,.formations .txt{grid-column:auto}.formations figure{aspect-ratio:4/3}}
+/* Le déroulé : une vraie suite d'étapes */
+.deroule{padding-block:8vh 16vh}
+.deroule .head{display:flex;justify-content:space-between;align-items:flex-end;gap:24px;flex-wrap:wrap;margin-bottom:56px}
+.deroule .head p.note{margin:0;max-width:36ch;color:var(--texte-2)}
+.steps{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0}
+.steps li{position:relative;padding:34px 26px 0 0;border-top:1px solid var(--or);min-width:0}
+.steps li+li{padding-left:26px}
+.steps li::before{content:"";position:absolute;top:-5px;left:0;width:9px;height:9px;border-radius:50%;background:var(--or-clair)}
+.steps li+li::before{left:26px}
+.steps .n{display:block;font:500 clamp(40px,4vw,60px)/1 var(--f-display);color:var(--or-txt);margin-bottom:22px}
+.steps h3{margin:0 0 10px;font:500 20px/1.2 var(--f-display);letter-spacing:.03em;color:var(--titre)}
+.steps p{margin:0;color:var(--texte-2);font-size:15px}
+@media (max-width:860px){.steps{grid-template-columns:1fr 1fr;row-gap:44px}.steps li:nth-child(3){padding-left:0}.steps li:nth-child(3)::before{left:0}}
+@media (max-width:520px){.steps{grid-template-columns:1fr}.steps li,.steps li+li{padding-left:0}.steps li::before,.steps li+li::before{left:0}}
 
-/* Pour qui */
-.pourqui{padding-block:10vh 16vh}
-.pourqui .intro{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:24px;margin-bottom:60px}
-.pourqui .intro h2{grid-column:1 / span 7}
-.pourqui .intro p{grid-column:9 / span 4;align-self:end;margin:0;color:var(--texte-2)}
-.cells{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border-top:1px solid var(--trait)}
-.cell{padding:28px 24px 0 0;display:grid;gap:12px;align-content:start;min-width:0}
-.cell + .cell{padding-left:24px;border-left:1px solid var(--trait)}
-.cell .k{font:500 12px/1 var(--f-text);color:var(--or-txt);letter-spacing:.1em}
-.cell h3{margin:0;font:500 22px/1.15 var(--f-display);letter-spacing:.02em;color:var(--titre)}
-.cell p{margin:0;font-size:14px;color:var(--texte-2)}
-@media (max-width:860px){.pourqui .intro{grid-template-columns:1fr}.pourqui .intro h2,.pourqui .intro p{grid-column:auto}.cells{grid-template-columns:repeat(2,minmax(0,1fr))}.cell:nth-child(3){padding-left:0;border-left:0}.cell{padding-bottom:28px}}
+/* Pour qui : bandeau qui défile */
+.pourqui{padding-block:10vh 18vh;overflow:hidden}
+.marquee{display:flex;overflow:hidden;padding-block:8px 34px;-webkit-mask-image:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent);mask-image:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent)}
+.marquee .track{display:flex;flex:none;align-items:center;gap:.5em;padding-right:.5em;font:500 clamp(44px,8vw,128px)/1.05 var(--f-display);letter-spacing:.03em;white-space:nowrap;animation:defile 48s linear infinite}
+.marquee .o{color:transparent;-webkit-text-stroke:1px var(--or-txt)}
+.marquee .f{color:var(--titre)}
+.marquee .dot{font-size:.35em;color:var(--or)}
+@keyframes defile{to{transform:translateX(-100%)}}
+.pourqui .after{display:flex;justify-content:space-between;align-items:flex-end;gap:24px;flex-wrap:wrap}
+.pourqui .after p{margin:0;max-width:60ch;font:italic 500 clamp(22px,2.2vw,30px)/1.3 var(--f-accent);color:var(--texte)}
 
 /* Contact */
 .contact{position:relative;min-height:100vh;display:grid;align-items:end;overflow:hidden;color:var(--ivoire);background:var(--nuit)}
 .contact .bg{position:absolute;inset:0}
 .contact .bg img{width:100%;height:100%;object-fit:cover;transform:scale(1.12);will-change:transform}
-.contact .bg::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,var(--fond) 0%,rgba(26,15,17,0) 26%,rgba(26,15,17,.3) 50%,rgba(26,15,17,.94) 100%)}
-.contact .inner{position:relative;padding-block:32vh 12vh;display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:48px;align-items:end}
-.contact h2.big{color:var(--ivoire)}
-.contact h2.big .acc{color:var(--or-clair)}
+.contact .bg::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,var(--fond) 0%,rgba(26,15,17,0) 26%,rgba(26,15,17,.25) 48%,rgba(26,15,17,.95) 100%)}
+.contact .inner{position:relative;padding-block:30vh 12vh;display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:48px;align-items:end}
 .contact .kicker{color:var(--or-clair)}
 .contact .kicker::after{background:var(--or-clair)}
-.direct{display:grid;gap:12px;margin-top:34px}
-.direct div{display:flex;align-items:center;gap:14px}
-.direct .ico{width:40px;height:40px;border:1px solid var(--or-clair);border-radius:50%;display:grid;place-items:center;color:var(--or-clair);flex:none}
-.direct .ico svg{width:18px;height:18px}
-.direct a,.direct span.v{font:500 clamp(18px,2vw,24px)/1.2 var(--f-text);text-decoration:none;user-select:all;overflow-wrap:anywhere}
-.direct a:hover{color:var(--or-clair)}
+.huge{margin:0;font:500 clamp(54px,10vw,170px)/.92 var(--f-display);letter-spacing:.03em;color:var(--ivoire)}
+.huge .acc{color:var(--or-clair);font-size:1.08em}
+.lines{display:grid;margin-top:38px;border-top:1px solid rgba(245,239,228,.25)}
+.lines .line{display:grid;grid-template-columns:110px minmax(0,1fr) auto;align-items:center;gap:16px;padding:16px 0;border-bottom:1px solid rgba(245,239,228,.25)}
+.lines .line .label{color:var(--or-clair)}
+.lines .v{font:500 clamp(18px,2.1vw,28px)/1.2 var(--f-text);text-decoration:none;user-select:all;overflow-wrap:anywhere;color:var(--ivoire)}
+.lines .v:hover{color:var(--or-clair)}
+.copy{all:unset;cursor:pointer;font:600 10px/1 var(--f-text);letter-spacing:.16em;text-transform:uppercase;color:var(--or-clair);padding:10px 12px;border:1px solid rgba(220,182,108,.5);border-radius:999px}
+.copy:hover{background:rgba(220,182,108,.15)}
+.copy:focus-visible{outline:1px solid var(--or-clair);outline-offset:3px}
+@media (max-width:560px){.lines .line{grid-template-columns:minmax(0,1fr) auto}.lines .line .label{grid-column:1 / -1}}
 form.book{display:grid;gap:14px;padding:28px;background:color-mix(in srgb,var(--fond-2) 90%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border:1px solid var(--trait);color:var(--texte);border-radius:14px;box-shadow:0 30px 60px -30px rgba(0,0,0,.6)}
 form.book h3{margin:0 0 4px;font:500 20px/1.2 var(--f-display);color:var(--titre);letter-spacing:.03em}
 form.book .row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
@@ -212,7 +233,7 @@ form.book select option{background:var(--fond-2);color:var(--texte)}
 form.book button{margin-top:8px;font:600 12px/1 var(--f-text);letter-spacing:.16em;text-transform:uppercase;color:var(--ivoire);background:var(--bordeaux);border:0;padding:16px;border-radius:999px;cursor:pointer;transition:background .3s}
 form.book button:hover{background:var(--or);color:var(--fond)}
 form.book .ok{margin:0;font-size:14px;color:var(--or-txt)}
-@media (max-width:860px){.contact .inner{grid-template-columns:1fr}form.book .row{grid-template-columns:1fr}}
+@media (max-width:860px){.contact .inner{grid-template-columns:1fr;padding-top:22vh}form.book .row{grid-template-columns:1fr}}
 
 /* Pied de page */
 footer{background:var(--bordeaux-2);color:var(--ivoire);padding-block:72px calc(110px + env(safe-area-inset-bottom,0px))}
@@ -234,7 +255,8 @@ footer .ph{text-decoration-color:var(--or-clair)}
 @media (prefers-reduced-motion:reduce){
   .rise{transform:none;opacity:1;transition:none}
   .scrollhint i{animation:none}
-  .sv-visual img,.sv button,.sv .more{transition:none}
+  .marquee .track{animation:none}
+  .btn,.btn::after{transition:none}
 }
 </style>
 
@@ -260,8 +282,8 @@ footer .ph{text-decoration-color:var(--or-clair)}
   <a href="#top" class="wordmark"><b>GESTION TAO</b><span>Martin Beauchamp</span></a>
   <ul>
     <li><a href="#services">Services</a></li>
-    <li><a href="#formations">Formations</a></li>
-    <li><a href="#pourqui">Pour qui</a></li>
+    <li><a href="#martin">L'animateur</a></li>
+    <li><a href="#deroule">Le déroulé</a></li>
     <li><a href="#contact" class="cta">Me contacter</a></li>
   </ul>
 </header>
@@ -306,79 +328,103 @@ footer .ph{text-decoration-color:var(--or-clair)}
     </div>
   </section>
 
-  <!-- LA MAISON -->
-  <section class="manifeste" id="maison">
-    <div class="wrap">
-      <p class="kicker label">Gestion TAO</p>
-      <p class="lead" id="lead"><span>Gestion TAO réunit trois façons de vivre le vin et les spiritueux : les apprendre avec méthode, les partager autour d'une table, et les montrer en images. Derrière les trois, un seul interlocuteur.</span></p>
-      <div class="sig label"><span><b>Martin Beauchamp</b> · Fondateur | Animateur</span><span>Vins · Spiritueux</span><span class="ph">Texte de présentation provisoire</span></div>
-    </div>
-  </section>
-
-  <!-- SERVICES -->
-  <section class="services" id="services">
-    <div class="wrap">
-      <div class="head rise">
-        <div><p class="kicker label">Mes services</p><h2 class="big">Trois métiers, <span class="acc">une même passion.</span></h2></div>
-        <p class="ph">Les descriptions sont à valider avec Martin. Les intitulés reprennent ceux de la carte de visite.</p>
-      </div>
-      <div class="sv-layout">
-        <ol class="sv-list">
-          <li class="sv active" data-img="img/cave.webp">
-            <button type="button" aria-expanded="true"><span class="ico"><svg><use href="#i-form"/></svg></span><span class="name">Formations de produits</span><span class="meta label">I</span></button>
-            <div class="more"><div><p class="ph">Des sessions structurées pour comprendre ce qu'on vend ou ce qu'on sert : profils de produits, régions de production, cépages et repères de dégustation.</p>
-              <ul class="chips label"><li>Vins</li><li>Spiritueux</li><li>Aperçus des régions</li><li>Cépages</li></ul></div></div>
-          </li>
-          <li class="sv" data-img="img/service.webp">
-            <button type="button" aria-expanded="false"><span class="ico"><svg><use href="#i-deg"/></svg></span><span class="name">Dégustations animées</span><span class="meta label">II</span></button>
-            <div class="more"><div><p class="ph">Une dégustation commentée et vivante, pour un groupe d'amis, une équipe ou un événement, avec un fil conducteur choisi ensemble.</p>
-              <ul class="chips label"><li>Vins</li><li>Spiritueux</li><li>Thématiques</li></ul></div></div>
-          </li>
-          <li class="sv" data-img="img/bouteille.webp">
-            <button type="button" aria-expanded="false"><span class="ico"><svg><use href="#i-photo"/></svg></span><span class="name">Photographies</span><span class="meta label">III</span></button>
-            <div class="more"><div><p class="ph">Des images soignées pour les cartes, les réseaux et les catalogues : bouteilles, service, lieux et soirées.</p>
-              <ul class="chips label"><li>Exécutions</li><li>Ambiance</li><li>Produits</li><li>Événements</li></ul></div></div>
-          </li>
-        </ol>
-        <div class="sv-visual" id="svvis" aria-hidden="true">
-          <img src="img/cave.webp" alt="" class="on" loading="lazy">
-          <span class="tag label">Image provisoire</span>
+  <!-- LA CARTE : trois panneaux plein écran qui s'empilent -->
+  <section class="carte" id="services" aria-label="Services">
+    <article class="pan" id="formations">
+      <div class="pan-in">
+        <img src="img/cave.webp" alt="Une cave voûtée bordée de casiers à bouteilles, une bouteille et un verre sur une table de pierre" style="--pos:50% 55%">
+        <div class="pan-body">
+          <ul class="pan-list" aria-label="Au programme"><li>Vins</li><li>Spiritueux</li><li>Aperçus des régions</li><li>Cépages</li></ul>
+          <div class="pan-copy">
+            <p class="eyebrow label">Formations de produits</p>
+            <h2>Formations</h2>
+            <div class="pan-foot">
+              <p class="ph">Des repères clairs pour mieux vendre, mieux servir et mieux conseiller, construits à partir de vos produits et de votre clientèle.</p>
+              <a class="btn" href="#contact" data-svc="Formation de produits">Demander une soumission</a>
+            </div>
+          </div>
         </div>
       </div>
-    </div>
+    </article>
+    <article class="pan" id="degustations">
+      <div class="pan-in">
+        <img src="img/service.webp" alt="Du vin rouge versé dans un grand verre, devant des casiers de bouteilles" style="--pos:44% 50%">
+        <div class="pan-body">
+          <ul class="pan-list" aria-label="Au programme"><li>Vins</li><li>Spiritueux</li><li>Thématiques</li></ul>
+          <div class="pan-copy">
+            <p class="eyebrow label">Dégustations animées</p>
+            <h2>Dégustations</h2>
+            <div class="pan-foot">
+              <p class="ph">Une dégustation commentée et vivante, pour des amis, une équipe ou un événement, autour d'un fil conducteur choisi ensemble.</p>
+              <a class="btn" href="#contact" data-svc="Dégustation animée">Demander une soumission</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </article>
+    <article class="pan" id="photographies">
+      <div class="pan-in">
+        <img src="img/bouteille.webp" alt="Une bouteille de vin rouge et un verre sur une table de pierre, à l'entrée d'une cave" style="--pos:42% 50%">
+        <div class="pan-body">
+          <ul class="pan-list" aria-label="Au programme"><li>Exécutions</li><li>Ambiance</li><li>Produits</li><li>Évènements</li></ul>
+          <div class="pan-copy">
+            <p class="eyebrow label">Photographies</p>
+            <h2>Photographies</h2>
+            <div class="pan-foot">
+              <p class="ph">Des bouteilles, des tables et des soirées qui donnent envie : des images pour les cartes, les réseaux et les catalogues.</p>
+              <a class="btn" href="#contact" data-svc="Photographie">Demander une soumission</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </article>
   </section>
 
-  <!-- FORMATIONS -->
-  <section class="formations" id="formations">
-    <div class="wrap grid">
-      <figure class="rise"><img src="img/versement.webp" alt="Une bouteille de vin rouge versée dans un verre, dans une cave voûtée" data-par="0.12" loading="lazy"><figcaption class="label">Formation de produits</figcaption></figure>
-      <div class="txt rise">
-        <p class="kicker label">Formations</p>
-        <h2 class="big">Comprendre <span class="acc">ce qu'on goûte.</span></h2>
-        <p class="ph">Chaque formation part de vos produits et de votre public. On repart avec des repères simples, faciles à transmettre en salle ou en boutique.</p>
-        <dl class="specs">
-          <div><dt class="label">Vins</dt><dd class="ph">Styles, appellations, service</dd></div>
-          <div><dt class="label">Spiritueux</dt><dd class="ph">Familles, fabrication, dégustation</dd></div>
-          <div><dt class="label">Aperçus des régions</dt><dd class="ph">Climats, sols, signatures</dd></div>
-          <div><dt class="label">Cépages</dt><dd class="ph">Reconnaître, comparer, accorder</dd></div>
+  <!-- L'ANIMATEUR -->
+  <section class="anim" id="martin">
+    <div class="wrap anim-grid">
+      <figure class="portrait rise"><img src="img/versement.webp" alt="Une bouteille de vin rouge versée dans un verre, dans une cave voûtée" loading="lazy"><figcaption class="label">Portrait de Martin à venir</figcaption></figure>
+      <div class="anim-txt rise">
+        <p class="kicker label">L'animateur</p>
+        <h2 class="big">Martin Beauchamp</h2>
+        <p class="role label">Fondateur | Animateur · Gestion TAO</p>
+        <blockquote class="ph">« Un vin se comprend mieux quand on le raconte. »</blockquote>
+        <p class="bio ph">Texte de présentation à écrire avec Martin : son parcours, ce qui l'a mené au vin et aux spiritueux, et sa façon d'animer une table.</p>
+        <dl class="facts">
+          <div><dt class="label">Produits</dt><dd>Vins et spiritueux</dd></div>
+          <div><dt class="label">Métiers</dt><dd>Formation, animation, photographie</dd></div>
+          <div><dt class="label">Secteur</dt><dd class="ph">Grand Montréal</dd></div>
         </dl>
       </div>
     </div>
   </section>
 
-  <!-- POUR QUI -->
-  <section class="pourqui" id="pourqui">
+  <!-- LE DÉROULÉ -->
+  <section class="deroule" id="deroule">
     <div class="wrap">
-      <div class="intro rise">
-        <h2 class="big">Pour ceux qui servent, <span class="acc">vendent ou reçoivent.</span></h2>
-        <p class="ph">Exemples de clientèle à confirmer avec Martin.</p>
+      <div class="head rise">
+        <div><p class="kicker label">Le déroulé</p><h2 class="big">D'un premier appel <span class="acc">au dernier verre.</span></h2></div>
+        <p class="note ph">Étapes à valider avec Martin.</p>
       </div>
-      <div class="cells rise">
-        <div class="cell"><span class="k">I</span><h3 class="ph">Restaurants et bars</h3><p class="ph">Former l'équipe de salle à la carte des vins.</p></div>
-        <div class="cell"><span class="k">II</span><h3 class="ph">Entreprises</h3><p class="ph">Une dégustation animée pour un événement d'équipe ou client.</p></div>
-        <div class="cell"><span class="k">III</span><h3 class="ph">Particuliers</h3><p class="ph">Une soirée thématique à la maison, entre amis.</p></div>
-        <div class="cell"><span class="k">IV</span><h3 class="ph">Agences et producteurs</h3><p class="ph">Lancements de produits, formation des représentants, photos.</p></div>
-      </div>
+      <ol class="steps rise">
+        <li><span class="n" aria-hidden="true">I</span><h3>L'appel</h3><p class="ph">On parle de l'occasion, du groupe, du lieu et du budget.</p></li>
+        <li><span class="n" aria-hidden="true">II</span><h3>La sélection</h3><p class="ph">Martin propose un thème, les produits et le déroulé de la séance.</p></li>
+        <li><span class="n" aria-hidden="true">III</span><h3>Le jour J</h3><p class="ph">Formation ou dégustation animée, chez vous, en entreprise ou en salle.</p></li>
+        <li><span class="n" aria-hidden="true">IV</span><h3>Les images</h3><p class="ph">En option, des photos de l'événement et des produits, prêtes à partager.</p></li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- POUR QUI -->
+  <section class="pourqui" id="pourqui" aria-label="Pour qui">
+    <div class="wrap"><p class="kicker label">Pour qui</p></div>
+    <div class="marquee" aria-hidden="true">
+      <div class="track"><span class="f">Restaurants</span><span class="dot">●</span><span class="o">Bars</span><span class="dot">●</span><span class="f">Cavistes</span><span class="dot">●</span><span class="o">Entreprises</span><span class="dot">●</span><span class="f">Agences</span><span class="dot">●</span><span class="o">Producteurs</span><span class="dot">●</span><span class="f">Particuliers</span><span class="dot">●</span></div>
+      <div class="track"><span class="f">Restaurants</span><span class="dot">●</span><span class="o">Bars</span><span class="dot">●</span><span class="f">Cavistes</span><span class="dot">●</span><span class="o">Entreprises</span><span class="dot">●</span><span class="f">Agences</span><span class="dot">●</span><span class="o">Producteurs</span><span class="dot">●</span><span class="f">Particuliers</span><span class="dot">●</span></div>
+    </div>
+    <div class="wrap after rise">
+      <p class="ph">Restaurants, bars, cavistes, entreprises, agences, producteurs ou particuliers : la formule s'adapte au groupe et à l'occasion.</p>
+      <a class="btn" href="#contact">Parler de votre projet</a>
     </div>
   </section>
 
@@ -388,10 +434,10 @@ footer .ph{text-decoration-color:var(--or-clair)}
     <div class="wrap inner">
       <div class="rise">
         <p class="kicker label">Contact</p>
-        <h2 class="big">Organisons votre <span class="acc">prochaine dégustation.</span></h2>
-        <div class="direct">
-          <div><span class="ico"><svg><use href="#i-tel"/></svg></span><a href="tel:+14383772944">438 377-2944</a></div>
-          <div><span class="ico"><svg><use href="#i-mail"/></svg></span><a href="mailto:martin@gestiontao.com">martin@gestiontao.com</a></div>
+        <h2 class="huge">Parlons <span class="acc">vin.</span></h2>
+        <div class="lines">
+          <div class="line"><span class="label">Téléphone</span><a class="v" href="tel:+14383772944">438 377-2944</a><button type="button" class="copy" data-copy="438 377-2944">Copier</button></div>
+          <div class="line"><span class="label">Courriel</span><a class="v" href="mailto:martin@gestiontao.com">martin@gestiontao.com</a><button type="button" class="copy" data-copy="martin@gestiontao.com">Copier</button></div>
         </div>
       </div>
       <form class="book rise" id="book" novalidate>
@@ -624,60 +670,59 @@ footer .ph{text-decoration-color:var(--or-clair)}
     nav.classList.toggle("solid", intro.getBoundingClientRect().bottom < 80);
   }, { passive: true });
   // « Passer l'intro » : défilement doux jusqu'au début du site
-  skip.addEventListener("click", () => document.getElementById("maison").scrollIntoView({ behavior: reduce ? "auto" : "smooth" }));
+  skip.addEventListener("click", () => document.getElementById("services").scrollIntoView({ behavior: reduce ? "auto" : "smooth" }));
   window.__intro = () => ({ p: prog(intro), ps, t: vid.currentTime, fcur, ready: vReady, seeking: vid.seeking });
   addEventListener("resize", fit);
   if (window.ResizeObserver) new ResizeObserver(fit).observe(film);
   fit();
   requestAnimationFrame(tick);
 
-  /* ---------- Texte de présentation : les mots s'allument ---------- */
-  const lead = document.getElementById("lead");
-  const leadSpan = lead.querySelector("span");
-  const words = leadSpan.textContent.trim().split(/\s+/);
-  leadSpan.innerHTML = words.map(w => `<span class="w">${w}</span>`).join(" ");
-  const ws = [...leadSpan.querySelectorAll(".w")];
-  function lightWords() {
-    const r = lead.getBoundingClientRect();
-    const t = clamp((H * 0.85 - r.top) / (r.height + H * 0.35));
-    const n = reduce ? ws.length : Math.round(t * ws.length);
-    ws.forEach((w, i) => w.classList.toggle("on", i < n));
+  /* ---------- La carte : chaque panneau recouvre le précédent, qui recule dans l'ombre ---------- */
+  const pans = [...document.querySelectorAll(".pan")];
+  function stack() {
+    const VH = innerHeight;
+    pans.forEach((pan, k) => {
+      const inner = pan.firstElementChild, img = inner.querySelector("img");
+      const top = pan.getBoundingClientRect().top;
+      if (top > VH || top < -VH * 2) return;
+      const nx = pans[k + 1];
+      const t = nx ? clamp(1 - nx.getBoundingClientRect().top / VH) : 0;   // recouvert par le suivant
+      const enter = clamp(1 - top / VH);                                       // arrivée du panneau
+      inner.style.transform = t ? `scale(${(1 - 0.08 * t).toFixed(4)})` : "";
+      inner.style.setProperty("--dim", (0.75 * t).toFixed(3));
+      img.style.transform = `scale(${(1.12 - 0.12 * enter).toFixed(4)}) translateY(${((1 - enter) * -4).toFixed(2)}%)`;
+    });
   }
 
-  /* ---------- Parallaxe douce ---------- */
+  /* ---------- Parallaxe douce du contact ---------- */
   const pars = [...document.querySelectorAll("[data-par]")];
   function parallax() {
-    if (reduce) return;
     for (const im of pars) {
       const r = im.parentElement.getBoundingClientRect();
-      if (r.bottom < 0 || r.top > H) continue;
-      const c = (r.top + r.height / 2 - H / 2) / H;
-      im.style.transform = `translateY(${(c * +im.dataset.par * 100).toFixed(2)}%) scale(${im.closest(".contact") ? 1.12 : 1})`;
+      if (r.bottom < 0 || r.top > innerHeight) continue;
+      const c = (r.top + r.height / 2 - innerHeight / 2) / innerHeight;
+      im.style.transform = `translateY(${(c * +im.dataset.par * 100).toFixed(2)}%) scale(1.12)`;
     }
   }
   let sraf = 0;
-  addEventListener("scroll", () => { if (!sraf) sraf = requestAnimationFrame(() => { sraf = 0; lightWords(); parallax(); }); }, { passive: true });
-  lightWords(); parallax();
+  const onScroll = () => { if (!sraf) sraf = requestAnimationFrame(() => { sraf = 0; if (!reduce) { stack(); parallax(); } }); };
+  addEventListener("scroll", onScroll, { passive: true });
+  addEventListener("resize", onScroll);
+  onScroll();
 
   /* ---------- Apparitions ---------- */
   const io = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); } }), { rootMargin: "0px 0px -8% 0px" });
   document.querySelectorAll(".rise").forEach(el => io.observe(el));
 
-  /* ---------- Services ---------- */
-  const svs = [...document.querySelectorAll(".sv")], vis = document.getElementById("svvis");
-  function showSv(li) {
-    svs.forEach(c => { const on = c === li; c.classList.toggle("active", on); c.querySelector("button").setAttribute("aria-expanded", on); });
-    const s = li.dataset.img;
-    let im = [...vis.querySelectorAll("img")].find(x => x.getAttribute("src") === s);
-    if (!im) { im = new Image(); im.src = s; im.alt = ""; vis.insertBefore(im, vis.querySelector(".tag")); }
-    requestAnimationFrame(() => requestAnimationFrame(() => vis.querySelectorAll("img").forEach(x => x.classList.toggle("on", x === im))));
-  }
-  svs.forEach(li => {
-    const b = li.querySelector("button");
-    b.addEventListener("click", () => showSv(li));
-    b.addEventListener("mouseenter", () => { if (matchMedia("(hover:hover)").matches) showSv(li); });
-    b.addEventListener("focus", () => showSv(li));
-  });
+  /* ---------- Boutons des panneaux : le service est déjà choisi dans le formulaire ---------- */
+  document.querySelectorAll("[data-svc]").forEach(a => a.addEventListener("click", () => { document.getElementById("b-svc").value = a.dataset.svc; }));
+
+  /* ---------- Copier le téléphone ou le courriel ---------- */
+  document.querySelectorAll(".copy").forEach(b => b.addEventListener("click", () => {
+    const v = b.dataset.copy, done = () => { b.textContent = "Copié"; setTimeout(() => b.textContent = "Copier", 1600); };
+    const pick = () => { const r = document.createRange(); r.selectNodeContents(b.previousElementSibling); const s = getSelection(); s.removeAllRanges(); s.addRange(r); };
+    try { navigator.clipboard.writeText(v).then(done, pick); } catch (e) { pick(); }
+  }));
 
   /* ---------- Demande (maquette) ---------- */
   const form = document.getElementById("book"), ok = document.getElementById("bookok");
