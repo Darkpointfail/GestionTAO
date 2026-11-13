@@ -81,8 +81,7 @@ main,footer{position:relative;z-index:1}
 .ld .n{font-variant-numeric:tabular-nums}
 
 /* ===== Intro au scroll ===== */
-#intro{position:relative;height:100vh;height:100lvh;z-index:2}
-html.in-intro,html.in-intro body{overscroll-behavior:none}
+#intro{position:relative;height:720vh;z-index:2}
 .stage{position:sticky;top:0;height:100vh;height:100lvh;width:100%;overflow:hidden;background:var(--nuit);color:var(--ivoire)}
 .stage canvas{position:absolute;inset:0;width:100%;height:100%}
 .stage .veil{position:absolute;inset:0;pointer-events:none;background:
@@ -435,22 +434,20 @@ footer .ph{text-decoration-color:var(--or-clair)}
 
 <script>
 (() => {
-  /* Séquence : 477 images (48 i/s), regroupées par 4 sur 120 planches (2 × 2).
-     Trois versions selon l'écran :
-     - "mob" : téléphone en portrait, image verticale 1080 × 1800 recadrée sur le sujet ;
-     - "xl"  : grand écran haute densité (Retina, 4K), 2560 × 1440 ;
-     - "hd"  : les autres écrans, 1920 × 1080. */
-  const FRAMES = 477, PER = 4, COLS = 2, SHEETS = Math.ceil(FRAMES / PER);
+  /* ---------- Intro : la vidéo avance au scroll ----------
+     Mécanique reprise du scroll vidéo de Tom : une vraie vidéo dont chaque image est une image clé
+     (encodée avec -g 1), « seekée » selon la position du scroll, avec un lissage et
+     une seule demande de seek à la fois. Deux versions :
+     - video/intro-1920.mp4   : 1920 × 1080, 24 i/s (ordinateur, tablette) ;
+     - video/intro-mobile.mp4 : 1080 × 1800, 24 i/s, cadrage vertical sur le sujet (téléphone en portrait).
+     Réglages : 720vh = longueur du scroll (CSS #intro) ; VIDEO_END = fin de la vidéo dans le scroll ;
+     ensuite, zoom dans l'allée de vignes et passage au site. */
+  const FPS = 24;
   const pad = n => String(n).padStart(3, "0");
-  const DPR0 = Math.min(devicePixelRatio || 1, 3);
   const portrait = innerHeight > innerWidth * 1.1 && innerWidth <= 900;
-  const TIER = portrait ? "mob" : (innerWidth >= 1000 && Math.max(innerWidth, innerHeight) * DPR0 >= 2200 ? "xl" : "hd");
-  const SIZES = { mob: [1080, 1800], hd: [1920, 1080], xl: [2560, 1440] };
-  const [FW, FH] = SIZES[TIER];
-  const sheetSrc = s => `seq/${TIER}/s_${pad(s + 1)}.webp`;
+  const SRC = portrait ? "video/intro-mobile.mp4" : "video/intro-1920.mp4";
   // point de fuite de l'allée centrale, en coordonnées image (la version téléphone est recadrée)
-  const VP = TIER === "mob" ? { x: 0.4926, y: 0.596 } : { x: 0.4975, y: 0.596 };
-  const IMG_W = FW, IMG_H = FH;
+  const VP = portrait ? { x: 0.4926, y: 0.596 } : { x: 0.4975, y: 0.596 };
   const PAPER = [26, 15, 17];                     // --fond (la cave)
   const GOLD = "180,138,60", GOLD_LIGHT = "232,196,120";
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -462,110 +459,68 @@ footer .ph{text-decoration-color:var(--or-clair)}
   const chapters = [...document.querySelectorAll(".ch")];
   const hudbar = document.getElementById("hudbar"), hudfc = document.getElementById("hudfc"), hudch = document.getElementById("hudch"), hud = document.getElementById("hud");
   const hint = document.getElementById("hint"), nav = document.getElementById("nav"), veil = document.getElementById("veil");
-
-  /* ---------- Chargement des planches ---------- */
-  const sheets = new Array(SHEETS);               // <img> (données compressées)
-  const bitmaps = new Map();                      // planches déjà décodées : index -> ImageBitmap
-  const pending = new Set();
-  let loaded = 0, curSheet = 0;
+  const skip = document.getElementById("skip");
   const ldn = document.getElementById("ldn"), ldb = document.getElementById("ldb"), loader = document.getElementById("loader");
-  const isOk = im => im && im.complete && im.naturalWidth > 0;
-  const onOne = s => () => {
-    loaded++;
-    const pct = Math.round(loaded / SHEETS * 100);
-    ldn.textContent = pct; ldb.style.width = pct + "%";
-    keepDecoded(curSheet);
-    if (s === 0) requestDraw(true);
-    // le début de la séquence suffit pour commencer : le reste continue de charger en arrière-plan
-    if (loaded === Math.min(SHEETS, 20)) thumbsReady.then(() => { loader.classList.add("done"); requestDraw(true); });
-  };
-  // Les planches sont téléchargées comme fichiers (Blob) : leur décodage par createImageBitmap
-  // se fait alors hors du fil principal. Si fetch n'est pas disponible (page ouverte en file://),
-  // on retombe sur de simples <img>.
-  const blobs = new Array(SHEETS);
-  // Planche de vignettes (toute la séquence en petit, ~1,4 Mo) : chargée en premier et gardée
-  // décodée, elle sert d'image de secours pendant un scroll rapide, pour ne jamais afficher de noir.
-  const TCOLS = 24, TW = TIER === "mob" ? 108 : 160, TH = TIER === "mob" ? 180 : 90;
-  let thumbs = null;
-  const thumbsReady = fetch(`seq/thumbs-${TIER === "mob" ? "mob" : "land"}.webp`)
-    .then(r => r.ok ? r.blob() : Promise.reject())
-    .then(b => createImageBitmap(b))
-    .then(bm => { thumbs = bm; requestDraw(true); })
-    .catch(() => {});
-  function loadImg(s) {
-    const im = new Image();
-    im.decoding = "async";
-    im.onload = onOne(s); im.onerror = onOne(s);
-    im.src = sheetSrc(s);
-    sheets[s] = im;
-  }
-  (async () => {
-    // téléchargement par priorité : d'abord les planches juste devant la position courante
-    const todo = new Set([...Array(SHEETS).keys()]);
-    const next = () => {
-      let best = -1, bd = 1e9;
-      for (const s of todo) { const d = s >= curSheet ? s - curSheet : (curSheet - s) * 3; if (d < bd) { bd = d; best = s; } }
-      todo.delete(best); return best;
-    };
-    const worker = async () => {
-      while (todo.size) {
-        const s = next();
-        try {
-          const r = await fetch(sheetSrc(s));
-          if (!r.ok) throw 0;
-          blobs[s] = await r.blob();
-          sheets[s] = { complete: true, naturalWidth: 1, blob: true };
-          onOne(s)();
-        } catch (e) { loadImg(s); }
-      }
-    };
-    await Promise.all([worker(), worker(), worker(), worker()]);
-  })();
-  setTimeout(() => loader.classList.add("done"), 15000);
 
-  // Décode à l'avance (hors du fil principal) les planches autour de la position courante,
-  // et libère les autres pour garder la mémoire basse.
-  const AHEAD = TIER === "mob" ? 5 : TIER === "xl" ? 6 : 7, BEHIND = 1;
-  let dir = 1, pinned = -1;   // pinned : dernière planche affichée, jamais libérée
-  function keepDecoded(c) {
-    const lo = c - (dir > 0 ? BEHIND : AHEAD), hi = c + (dir > 0 ? AHEAD : BEHIND);
-    for (const [s, bm] of bitmaps) if ((s < lo - 1 || s > hi + 1) && s !== pinned) { bm.close && bm.close(); bitmaps.delete(s); }
-    if (!window.createImageBitmap) return;
-    for (let s = Math.max(0, lo); s <= Math.min(SHEETS - 1, hi); s++) {
-      if (bitmaps.has(s) || pending.has(s) || !isOk(sheets[s])) continue;
-      pending.add(s);
-      createImageBitmap(blobs[s] || sheets[s]).then(bm => {
-        pending.delete(s);
-        if (Math.abs(s - curSheet) > AHEAD + 2 && s !== pinned) { bm.close && bm.close(); return; }
-        bitmaps.set(s, bm); requestDraw(true);
-      }).catch(() => pending.delete(s));
-    }
-  }
-  // Source dessinable pour l'image f : planche décodée en priorité, sinon <img>, sinon la plus proche décodée
-  function frameSource(f) {
-    const s = Math.floor(f / PER), k = f % PER;
-    const sx = (k % COLS) * FW, sy = Math.floor(k / COLS) * FH;
-    if (bitmaps.has(s)) return { src: bitmaps.get(s), sx, sy, sw: FW, sh: FH, sheet: s };
-    if (isOk(sheets[s]) && !sheets[s].blob && !window.createImageBitmap) return { src: sheets[s], sx, sy, sw: FW, sh: FH };
-    // image pas encore prête : d'abord une image nette toute proche (décalage de quelques images, invisible),
-    // sinon la vignette de la bonne image, sinon la planche décodée la plus proche.
-    let best = null, bd = 1e9;
-    for (const [bs] of bitmaps) { const d = Math.abs(bs - s); if (d < bd) { bd = d; best = bs; } }
-    const nearFrame = best === null ? -1 : Math.min(best < s ? best * PER + PER - 1 : best * PER, FRAMES - 1);
-    if (best !== null && Math.abs(nearFrame - f) <= 10) return frameSource(nearFrame);
-    if (thumbs) return { src: thumbs, sx: (f % TCOLS) * TW, sy: Math.floor(f / TCOLS) * TH, sw: TW, sh: TH, thumb: true };
-    if (best !== null) return frameSource(nearFrame);
-    if (isOk(sheets[s]) && !sheets[s].blob) return { src: sheets[s], sx, sy, sw: FW, sh: FH };
-    return null;
-  }
+  const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+  const seg = (p, a, b) => clamp((p - a) / (b - a));
+  const ease = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  const easeOut = t => 1 - Math.pow(1 - t, 3);
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const prog = el => { const r = el.getBoundingClientRect(); return clamp(-r.top / (r.height - innerHeight)); };
+
+  /* ---------- La vidéo ---------- */
+  const vid = document.createElement("video");
+  Object.assign(vid, { muted: true, playsInline: true, preload: "auto" });
+  vid.setAttribute("muted", ""); vid.setAttribute("playsinline", "");
+  let vReady = false, needDraw = true, fcur = 0, ps = 0, lastP = -1, FRAMES = 240;
+  // iPhone : Safari ne charge la vidéo qu'après un play ; on la lance muette puis pause
+  function wake() { const p = vid.play(); if (p && p.then) p.then(() => vid.pause()).catch(() => {}); }
+  addEventListener("touchstart", wake, { once: true, passive: true });
+  vid.addEventListener("loadeddata", () => {
+    vReady = true; needDraw = true;
+    FRAMES = Math.round(vid.duration * FPS) || FRAMES;
+    loader.classList.add("done");
+  });
+  vid.addEventListener("seeked", () => { needDraw = true; });
+  // La vidéo est téléchargée en entier avant de commencer (barre de chargement) :
+  // ensuite chaque seek se fait en mémoire, sans attendre le réseau.
+  let fellBack = false;
+  function direct() { if (fellBack) return; fellBack = true; vid.src = SRC; wake(); }
+  vid.addEventListener("error", () => { if (vid.src.startsWith("blob:")) direct(); });
+  (async () => {
+    try {
+      const r = await fetch(SRC);
+      if (!r.ok || !r.body) throw 0;
+      const total = +r.headers.get("content-length") || 0, reader = r.body.getReader(), parts = [];
+      let got = 0;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        parts.push(value); got += value.length;
+        if (total) { const pct = Math.round(got / total * 100); ldn.textContent = pct; ldb.style.width = pct + "%"; }
+      }
+      if (fellBack) return;
+      vid.src = URL.createObjectURL(new Blob(parts, { type: "video/mp4" }));
+      wake();
+    } catch (e) { direct(); }
+  })();
+  // filet de sécurité : si le téléchargement traîne, on lit la vidéo directement
+  setTimeout(() => { if (!vReady) direct(); }, 20000);
+  setTimeout(() => loader.classList.add("done"), 30000);
 
   /* ---------- Dimensions ---------- */
+  // Le canvas suit sa vraie taille à l'écran (évite le saut de la barre d'adresse iPhone)
   let W = 0, H = 0, DPR = 1;
-  function resize() {
-    W = innerWidth; H = innerHeight; DPR = Math.min(devicePixelRatio || 1, 2);
-    for (const c of [film, lig, rangs]) { c.width = Math.round(W * DPR); c.height = Math.round(H * DPR); }
+  function fit() {
+    DPR = Math.min(devicePixelRatio || 1, 2);
+    const r = film.getBoundingClientRect();
+    if (!r.width || !r.height) return;
+    W = r.width; H = r.height;
+    for (const c of [film, lig]) { const w = Math.round(W * DPR), h = Math.round(H * DPR); if (c.width !== w || c.height !== h) { c.width = w; c.height = h; } }
+    rangs.width = Math.round(innerWidth * DPR); rangs.height = Math.round(innerHeight * DPR);
     drawRangs();
-    requestDraw(true);
+    needDraw = true;
   }
   function gridX() {
     const n = W < 720 ? 6 : 12;
@@ -575,16 +530,19 @@ footer .ph{text-decoration-color:var(--or-clair)}
   }
   const RANG_ALPHA = 0.11;
   function drawRangs() {
+    const RH = innerHeight;
     rctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-    rctx.clearRect(0, 0, W, H);
+    rctx.clearRect(0, 0, innerWidth, RH);
     rctx.strokeStyle = `rgba(${GOLD_LIGHT},${RANG_ALPHA})`; rctx.lineWidth = 1;
     rctx.beginPath();
-    for (const x of gridX()) { const X = Math.round(x) + 0.5; rctx.moveTo(X, 0); rctx.lineTo(X, H); }
+    for (const x of gridX()) { const X = Math.round(x) + 0.5; rctx.moveTo(X, 0); rctx.lineTo(X, RH); }
     rctx.stroke();
   }
+  // Dessin « cover » (remplit l'écran), cadré sur l'allée centrale
   function cover() {
-    const s = Math.max(W / IMG_W, H / IMG_H);
-    const w = IMG_W * s, h = IMG_H * s;
+    const iw = vid.videoWidth || (portrait ? 1080 : 1920), ih = vid.videoHeight || (portrait ? 1800 : 1080);
+    const s = Math.max(W / iw, H / ih);
+    const w = iw * s, h = ih * s;
     let x = W / 2 - VP.x * w; x = Math.min(0, Math.max(W - w, x));
     const y = (H - h) / 2;
     return { x, y, w, h };
@@ -592,195 +550,35 @@ footer .ph{text-decoration-color:var(--or-clair)}
 
   /* ---------- Timeline ---------- */
   const VIDEO_END = 0.78, ZOOM_END = 0.93;
-  const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
-  const seg = (p, a, b) => clamp((p - a) / (b - a));
-  const ease = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-  const easeOut = t => 1 - Math.pow(1 - t, 3);
-  const lerp = (a, b, t) => a + (b - a) * t;
 
-  /* ---------- Pilotage de l'intro : un mouvement continu ----------
-     La molette, le trackpad, le doigt ou le clavier poussent une position cible ;
-     la vidéo la suit avec de l'inertie et une vitesse plafonnée : elle ne saute jamais,
-     ne part pas en roue libre et ralentit en douceur quand on arrête de scroller.
-     Au repos, l'image « respire » (léger mouvement de caméra). */
-  const VMAX = 0.2, ACC = 0.9, K = 3.2, LEAD = 0.07;  // 0,2 = 120 images/s au plus : l'intro dure au moins 5 s
-  const WHEEL = 1 / 4500, TOUCH = 1 / 2200;
-  const U_END = 1;
-  let uc = 0, ut = 0, vel = 0, cur = 0, endAt = 0;
-  let raf = 0, force = false, lastT = 0;
-  let mode = "intro", capturing = false, autoScroll = false;
-  const stage = document.getElementById("stage"), skip = document.getElementById("skip");
-  const isReady = () => loader.classList.contains("done");
-
-  // Ralentit si les images nettes à venir ne sont pas encore décodées (comme une vidéo qui « bufferise »)
-  function readiness(d) {
-    if (cur >= VIDEO_END || !window.createImageBitmap) return 1;
-    const s = Math.floor(cur / VIDEO_END * (FRAMES - 1) / PER);
-    const gs = Math.floor(Math.min(ut, VIDEO_END) / VIDEO_END * (FRAMES - 1) / PER);
-    const caps = [0.12, 0.12, 0.45, 0.8];
-    for (let k = 0; k <= 3; k++) {
-      const t = s + d * k;
-      if (t < 0 || t >= SHEETS || (d > 0 ? t > gs : t < gs)) break;
-      if (!bitmaps.has(t)) return caps[k];
+  function tick() {
+    const p = prog(intro);
+    ps += (p - ps) * 0.3; if (Math.abs(p - ps) < 0.0004) ps = p;     // lissage
+    if (vReady) {
+      const T = clamp(ps / VIDEO_END) * (vid.duration - 1 / FPS);
+      fcur += (T - fcur) * 0.3; if (Math.abs(T - fcur) < 0.002) fcur = T;
+      // une seule demande à la fois : on ne relance un seek que quand le précédent est fini
+      if (!vid.seeking && Math.abs(vid.currentTime - fcur) > 0.25 / FPS) vid.currentTime = fcur;
     }
-    return 1;
+    if (needDraw || ps !== lastP) { render(ps); needDraw = false; lastP = ps; }
+    requestAnimationFrame(tick);
   }
-
-  // Geste de l'utilisateur : déplace la cible, jamais à plus de LEAD devant la vidéo
-  // (un scroll violent ne part donc pas en roue libre)
-  function push(du) {
-    if (!isReady() || mode !== "intro" || !du) return;
-    ut = clamp(clamp(ut + du, uc - LEAD, uc + LEAD), 0, U_END);
-    requestDraw();
-  }
-
-  function requestDraw(f) { if (f) force = true; if (!raf) raf = requestAnimationFrame(tick); }
-  function tick(now) {
-    raf = 0;
-    const dt = lastT ? Math.min(0.05, (now - lastT) / 1000) : 1 / 60;
-    lastT = now;
-    if (mode !== "site") {
-      // suivi avec inertie et vitesse plafonnée
-      const d = ut - uc;
-      if (reduce) { uc = ut; vel = 0; }
-      else if (Math.abs(d) > 2e-4 || Math.abs(vel) > 2e-3) {
-        const cap = VMAX * readiness(d > 0 ? 1 : -1);
-        const want = clamp(d * K, -cap, cap);
-        const lim = ACC * dt * (Math.abs(want) < Math.abs(vel) ? 2.5 : 1);
-        vel += clamp(want - vel, -lim, lim);
-        uc = clamp(uc + vel * dt, 0, U_END);
-      } else { uc = ut; vel = 0; }
-      cur = uc;
-      if (uc >= U_END - 2e-3) { if (!endAt) endAt = performance.now(); } else endAt = 0;
-      skip.classList.toggle("off", mode !== "intro" || cur > 0.9);
-    }
-    render(cur);
-    // dans l'intro, on redessine en continu : l'image n'est jamais figée
-    if (mode !== "site" || force) { force = false; raf = requestAnimationFrame(tick); } else lastT = 0;
-  }
-
-  // Défilement automatique doux (sortie vers le site au toucher, retour en haut)
-  let sa = 0;
-  function scrollAnim(to, ms, done) {
-    cancelAnimationFrame(sa); autoScroll = true;
-    const from = scrollY, t0 = performance.now();
-    if (reduce) ms = 1;
-    const f = now => {
-      const k = Math.min(1, (now - t0) / ms);
-      scrollTo(0, from + (to - from) * ease(k));
-      if (k < 1) sa = requestAnimationFrame(f); else { autoScroll = false; done && done(); }
-    };
-    sa = requestAnimationFrame(f);
-  }
-  function leave(then) {
-    setMode("exiting");
-    scrollAnim(intro.offsetHeight, 1000, () => { setMode("site"); then && then(); });
-  }
-  function place(u) { uc = ut = u; vel = 0; cur = u; endAt = u >= U_END - 2e-3 ? performance.now() : 0; }
-  // Retour dans l'intro en remontant tout en haut du site : on repart de la fin, en continu
-  function enter() {
-    place(U_END);
-    setMode("intro");
-  }
-  // Saut direct avec un court fondu (bouton « Passer l'intro », liens du menu, logo)
-  function cut(i, then) {
-    stage.style.transition = "opacity .3s ease"; stage.style.opacity = "0";
-    setTimeout(() => {
-      place(i);
-      keepDecoded(Math.floor(Math.min(cur, VIDEO_END) / VIDEO_END * (FRAMES - 1) / PER));
-      render(cur); stage.style.opacity = "1";
-      then && then();
-    }, reduce ? 0 : 320);
-  }
-
-  window.__intro = () => ({ cur, uc, ut, mode, vel });
-  skip.addEventListener("click", () => { if (mode === "intro") cut(1, () => leave()); });
-
-  /* Molette et trackpad : chaque cran pousse la vidéo, sans jamais être ignoré */
-  const WOPT = { passive: false };
-  let overflow = 0;
-  function onWheel(e) {
-    if (e.ctrlKey) return;                       // zoom au trackpad : on laisse faire
-    let d = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : 0;
-    d *= e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? H : 1;
-    // arrivé au bout de l'intro, on continue de scroller : la page prend le relais naturellement
-    if (mode === "intro" && d > 0 && endAt && performance.now() - endAt > 450) {
-      overflow += d;
-      if (overflow > 120) { overflow = 0; setMode("site"); return; }
-    } else overflow = 0;
-    e.preventDefault();
-    if (mode === "intro") push(d * WHEEL);
-  }
-  /* Doigt sur écran tactile : la vidéo suit le doigt, puis l'élan quand on le lâche */
-  let ty = null, tlast = 0, tvel = 0, tover = 0;
-  addEventListener("touchstart", e => { ty = e.touches[0].clientY; tlast = performance.now(); tvel = 0; tover = 0; }, { passive: true });
-  function onTouchMove(e) {
-    if (e.touches.length > 1) return;            // pincer pour zoomer reste possible
-    e.preventDefault();
-    if (mode !== "intro" || ty === null) return;
-    const y = e.touches[0].clientY, now = performance.now();
-    const dy = ty - y, dtm = Math.max(1, now - tlast);
-    ty = y; tlast = now;
-    tvel = 0.6 * tvel + 0.4 * (dy / dtm * 1000);
-    if (dy > 0 && endAt && now - endAt > 450) { tover += dy; if (tover > 40) { ty = null; leave(); } return; }
-    push(dy * TOUCH);
-  }
-  addEventListener("touchend", () => {
-    if (mode === "intro" && ty !== null && performance.now() - tlast < 90) push(clamp(tvel, -2600, 2600) * TOUCH * 0.3);
-    ty = null;
-  }, { passive: true });
-  function setMode(m) {
-    mode = m;
-    const want = m !== "site";
-    if (want !== capturing) {
-      capturing = want;
-      const f = want ? addEventListener : removeEventListener;
-      f("wheel", onWheel, WOPT); f("touchmove", onTouchMove, WOPT);
-    }
-    document.documentElement.classList.toggle("in-intro", want);
-    skip.classList.toggle("off", m !== "intro" || cur > 0.9);
-    if (want) requestDraw();
-  }
-  /* Clavier : flèches = petit pas, Espace et Page = grand pas, toujours en douceur */
-  addEventListener("keydown", e => {
-    if (mode === "site" || e.metaKey || e.ctrlKey || e.altKey) return;
-    if (e.target.closest && e.target.closest("input,select,textarea")) return;
-    const k = e.key;
-    const fwd = k === "ArrowDown" || k === "PageDown" || k === "ArrowRight" || (k === " " && !e.shiftKey);
-    const back = k === "ArrowUp" || k === "PageUp" || k === "ArrowLeft" || (k === " " && e.shiftKey);
-    if (!fwd && !back && k !== "Home" && k !== "End") return;
-    if (k === " " && e.target.closest && e.target.closest("button,a")) return;
-    e.preventDefault();
-    if (mode !== "intro" || !isReady()) return;
-    if (k === "Home") { ut = 0; return requestDraw(); }
-    if (k === "End") { ut = U_END; return requestDraw(); }
-    if (fwd && endAt && !e.repeat) return leave();
-    const big = k === " " || k.startsWith("Page");
-    ut = clamp(ut + (fwd ? 1 : -1) * (big ? 0.12 : 0.05), 0, U_END); requestDraw();
-  });
 
   function render(p) {
     const box = cover();
-    const fp = clamp(p / VIDEO_END) * (FRAMES - 1);
-    const i0 = Math.floor(fp), i1 = Math.min(FRAMES - 1, i0 + 1), t = fp - i0;
     const z = ease(seg(p, VIDEO_END - 0.02, ZOOM_END));
-    const breathe = reduce ? 0 : (1 - z) * 0.022 * (0.5 - 0.5 * Math.cos(performance.now() / 1000 * 2 * Math.PI / 14));
-    const scale = (1 + z * 1.25) * (1 + breathe);
+    const scale = 1 + z * 1.25;
     const vpx = box.x + VP.x * box.w, vpy = box.y + VP.y * box.h;
 
     fctx.setTransform(DPR, 0, 0, DPR, 0, 0);
     fctx.fillStyle = "#120c0a"; fctx.fillRect(0, 0, W, H);
-    fctx.save();
-    fctx.translate(vpx, vpy); fctx.scale(scale, scale); fctx.translate(-vpx, -vpy);
-    const sh = Math.floor(i0 / PER);
-    if (sh !== curSheet) { dir = sh > curSheet ? 1 : -1; curSheet = sh; keepDecoded(sh); }
-    const a = frameSource(i0);
-    if (a) { fctx.drawImage(a.src, a.sx, a.sy, a.sw, a.sh, box.x, box.y, box.w, box.h); if (a.sheet !== undefined) pinned = a.sheet; }
-    const b = t > 0.02 && i1 !== i0 ? frameSource(i1) : null;
-    if (b && (!a || b.src !== a.src || b.sx !== a.sx || b.sy !== a.sy)) {
-      fctx.globalAlpha = t; fctx.drawImage(b.src, b.sx, b.sy, b.sw, b.sh, box.x, box.y, box.w, box.h); fctx.globalAlpha = 1;
+    if (vReady) {
+      fctx.save();
+      fctx.translate(vpx, vpy); fctx.scale(scale, scale); fctx.translate(-vpx, -vpy);
+      fctx.imageSmoothingQuality = "high";
+      fctx.drawImage(vid, box.x, box.y, box.w, box.h);
+      fctx.restore();
     }
-    fctx.restore();
     // la page « devient papier »
     const paper = ease(seg(p, VIDEO_END + 0.07, ZOOM_END + 0.02));
     if (paper > 0) { fctx.fillStyle = `rgba(${PAPER},${paper})`; fctx.fillRect(0, 0, W, H); }
@@ -796,13 +594,14 @@ footer .ph{text-decoration-color:var(--or-clair)}
       el.style.opacity = op.toFixed(3);
       if (!el.classList.contains("ch-end")) el.style.transform = `translateY(${((1 - op) * (p < i + f ? 30 : -30)).toFixed(1)}px)`;
     }
+    const fr = Math.min(FRAMES, Math.round(clamp(p / VIDEO_END) * (FRAMES - 1)) + 1);
     hudbar.style.height = (p * 100).toFixed(2) + "%";
-    hudfc.textContent = `${pad(Math.round(fp) + 1)} / ${FRAMES}`;
+    hudfc.textContent = `${pad(fr)} / ${FRAMES}`;
     hudch.textContent = p < 0.11 ? "Ouverture" : p < 0.29 ? "Formations" : p < 0.45 ? "Dégustations" : p < VIDEO_END ? "Photographies" : "Vignes";
     hint.style.opacity = (1 - seg(p, 0, 0.04)).toFixed(3);
+    skip.classList.toggle("off", p > 0.85);
     nav.classList.toggle("paper", paper > 0.6);
   }
-
   // Les rangs de vigne : lignes de fuite qui se redressent en grille verticale
   function drawLines(p, vpx, vpy, paper) {
     lctx.setTransform(DPR, 0, 0, DPR, 0, 0);
@@ -829,41 +628,16 @@ footer .ph{text-decoration-color:var(--or-clair)}
     }
   }
 
-  let prevY = scrollY;
   addEventListener("scroll", () => {
-    const y = scrollY;
     nav.classList.toggle("solid", intro.getBoundingClientRect().bottom < 80);
-    if (!autoScroll) {
-      if (mode === "site" && y <= 0 && prevY > 0) enter();
-      else if (mode === "intro" && y > 4) {
-        // la page a défilé sans passer par nous (barre de défilement, touche Tab…) : on sort de l'intro
-        place(U_END); render(cur); setMode("site");
-      }
-    }
-    prevY = y;
   }, { passive: true });
-  // Liens du menu : depuis l'intro, court fondu puis défilement vers la section
-  document.addEventListener("click", e => {
-    const a = e.target.closest && e.target.closest('a[href^="#"]');
-    if (!a) return;
-    const id = a.getAttribute("href");
-    if (id === "#top") {
-      e.preventDefault();
-      if (mode === "site") scrollAnim(0, 900, () => { enter(); cut(0); });
-      else if (mode === "intro" && uc > 0) cut(0);
-      return;
-    }
-    const el = document.querySelector(id);
-    if (!el || mode === "site") return;
-    e.preventDefault();
-    if (mode === "intro") cut(1, () => { setMode("exiting"); scrollAnim(el.getBoundingClientRect().top + scrollY - 70, 1100, () => setMode("site")); });
-  });
-  addEventListener("resize", resize);
-  if ("scrollRestoration" in history) history.scrollRestoration = "manual";
-  const startEl = location.hash && location.hash !== "#top" && document.querySelector(location.hash);
-  if (startEl) { place(U_END); setMode("site"); }
-  else { scrollTo(0, 0); setMode("intro"); }
-  resize();
+  // « Passer l'intro » : défilement doux jusqu'au début du site
+  skip.addEventListener("click", () => document.getElementById("maison").scrollIntoView({ behavior: reduce ? "auto" : "smooth" }));
+  window.__intro = () => ({ p: prog(intro), ps, t: vid.currentTime, fcur, ready: vReady, seeking: vid.seeking });
+  addEventListener("resize", fit);
+  if (window.ResizeObserver) new ResizeObserver(fit).observe(film);
+  fit();
+  requestAnimationFrame(tick);
 
   /* ---------- Texte de présentation : les mots s'allument ---------- */
   const lead = document.getElementById("lead");
