@@ -73,6 +73,9 @@ main,footer{position:relative;z-index:1}
 /* Chargement */
 #loader{position:fixed;inset:0;z-index:50;background:var(--fond);display:grid;place-items:center;transition:opacity .9s ease, visibility .9s}
 #loader.done{opacity:0;visibility:hidden}
+#loader .tap{display:none;color:var(--titre);opacity:.8;font-size:13px;letter-spacing:.08em;margin-top:6px}
+#loader.tap .tap{display:block;animation:ldpulse 1.6s ease-in-out infinite}
+@keyframes ldpulse{50%{opacity:.35}}
 .ld{display:grid;gap:18px;justify-items:center;text-align:center;color:var(--titre)}
 .ld .t{font:500 clamp(30px,6vw,56px)/1 var(--f-display);letter-spacing:.1em}
 .ld .rule{width:min(260px,60vw);height:1px;background:var(--trait);overflow:hidden}
@@ -273,6 +276,7 @@ footer .ph{text-decoration-color:var(--or-clair)}
     <div class="t">GESTION TAO</div>
     <div class="rule"><i id="ldb"></i></div>
     <div class="label">Martin Beauchamp · <span class="n" id="ldn">0</span> %</div>
+    <div class="tap">Touchez l'écran pour lancer le film</div>
   </div>
 </div>
 
@@ -505,27 +509,107 @@ footer .ph{text-decoration-color:var(--or-clair)}
   const ease = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
   const easeOut = t => 1 - Math.pow(1 - t, 3);
   const lerp = (a, b, t) => a + (b - a) * t;
-  const prog = el => { const r = el.getBoundingClientRect(); return clamp(-r.top / (r.height - innerHeight)); };
+  // La hauteur de référence est celle de la scène collante (100lvh), pas innerHeight :
+  // sur iPhone, innerHeight change quand la barre d'adresse se replie, ce qui faisait sauter l'image.
+  const stageEl = document.getElementById("stage");
+  const prog = el => {
+    const r = el.getBoundingClientRect();
+    const vh = (el === intro && stageEl && stageEl.offsetHeight) || innerHeight;
+    return clamp(-r.top / Math.max(1, r.height - vh));
+  };
 
-  /* ---------- La vidéo ---------- */
+  /* ---------- La vidéo ----------
+     Règles (audit) :
+     1. La vidéo ne joue jamais. Elle reste en pause et on ne fait que des seeks, image par image.
+     2. On ne dessine jamais la vidéo elle-même : chaque image demandée est copiée dans un canvas
+        (« still ») dès qu'elle est prête, et c'est ce canvas qui s'affiche. Si le navigateur libère
+        la vidéo (onglet caché, écran verrouillé, mémoire), l'image à l'écran ne bouge pas.
+     3. Au retour sur la page, on redemande exactement la même image avant de la remplacer. */
   const vid = document.createElement("video");
-  Object.assign(vid, { muted: true, playsInline: true, preload: "auto" });
-  vid.setAttribute("muted", ""); vid.setAttribute("playsinline", "");
-  let vReady = false, needDraw = true, fcur = 0, ps = 0, lastP = -1, FRAMES = 240;
-  // iPhone : Safari ne charge la vidéo qu'après un play ; on la lance muette puis pause
-  function wake() { const p = vid.play(); if (p && p.then) p.then(() => vid.pause()).catch(() => {}); }
-  addEventListener("touchstart", wake, { once: true, passive: true });
+  Object.assign(vid, { muted: true, defaultMuted: true, playsInline: true, preload: "auto", autoplay: false, loop: false });
+  vid.setAttribute("muted", ""); vid.setAttribute("playsinline", ""); vid.setAttribute("webkit-playsinline", "");
+  vid.disablePictureInPicture = true; vid.disableRemotePlayback = true;
+  const still = document.createElement("canvas"), sctx = still.getContext("2d");
+  const probe = document.createElement("canvas"); probe.width = probe.height = 8;
+  const pctx = probe.getContext("2d", { willReadFrequently: true });
+  let IW = portrait ? 1080 : 1920, IH = portrait ? 1800 : 1080, FRAMES = 240;
+  let vReady = false, synced = false, srcSet = false, unlocking = false, fellBack = false;
+  let needDraw = true, ps = 0, lastP = -1, fpos = 0;
+  let reqIdx = -1, shown = -1, seekAt = 0, grabs = 0, verify = true, blackTries = 0, seeks = 0;
+  const idxOf = t => clamp(Math.floor(t * FPS + 1e-3), 0, FRAMES - 1);
+  const timeOf = i => (i + 0.5) / FPS;                 // milieu de l'image : jamais d'arrondi vers la précédente
+
+  // l'image décodée est-elle vide ? (la plus sombre de la vidéo est loin du noir)
+  function looksBlack() {
+    try {
+      pctx.drawImage(vid, 0, 0, 8, 8);
+      const d = pctx.getImageData(0, 0, 8, 8).data; let sum = 0;
+      for (let k = 0; k < d.length; k += 4) sum += d[k] + d[k + 1] + d[k + 2];
+      return sum / 192 < 10;
+    } catch (e) { return false; }
+  }
+  const frameReady = () => vReady && !unlocking && vid.paused && !vid.seeking && vid.readyState >= 2 &&
+    reqIdx >= 0 && idxOf(vid.currentTime) === reqIdx;
+  // copie l'image demandée dans le canvas affiché
+  function grab() {
+    if (!frameReady()) return false;
+    if (verify && looksBlack() && ++blackTries < 4) return false;
+    if (still.width !== IW || still.height !== IH) { still.width = IW; still.height = IH; }
+    try { sctx.drawImage(vid, 0, 0, IW, IH); } catch (e) { return false; }
+    shown = reqIdx; verify = false; blackTries = 0; needDraw = true;
+    if (!synced) { synced = true; loader.classList.add("done"); }
+    return true;
+  }
+  function seekTo(i) {
+    reqIdx = i; seekAt = performance.now(); grabs = 2; seeks++;
+    try { vid.currentTime = timeOf(i); } catch (e) {}
+  }
+  vid.addEventListener("seeked", () => { grab(); });
+
+  // Personne ne fait jouer la vidéo : si un play arrive (touche média, navigateur), pause immédiate.
+  const hush = () => { if (!unlocking && !vid.paused) vid.pause(); };
+  vid.addEventListener("play", hush);
+  vid.addEventListener("playing", hush);
+  vid.addEventListener("timeupdate", hush);
+  vid.addEventListener("pause", () => { reqIdx = -1; });   // on se recale sur la bonne image
+
+  // iPhone : Safari peut attendre un premier play() pour charger la vidéo (mode économie d'énergie
+  // surtout). On le fait en coulisses, invisible : rien ne s'affiche tant que la vidéo n'est pas en pause.
+  function wake() {
+    if (vReady || unlocking || !srcSet) return;
+    unlocking = true;
+    let done = false;
+    const end = () => { if (done) return; done = true; vid.pause(); unlocking = false; reqIdx = -1; };
+    let pr; try { pr = vid.play(); } catch (e) { end(); return; }
+    if (pr && pr.then) pr.then(end, end); else end();
+    setTimeout(end, 2500);
+  }
+  for (const ev of ["touchstart", "pointerdown", "keydown"]) addEventListener(ev, wake, { passive: true });
+
   vid.addEventListener("loadeddata", () => {
-    vReady = true; needDraw = true;
-    FRAMES = Math.round(vid.duration * FPS) || FRAMES;
-    loader.classList.add("done");
+    const d = vid.duration;
+    if (isFinite(d) && d > 0) FRAMES = Math.max(1, Math.round(d * FPS));
+    if (vid.videoWidth && vid.videoHeight) { IW = vid.videoWidth; IH = vid.videoHeight; }
+    vReady = true; reqIdx = -1; verify = true;
+    loader.classList.remove("tap");
   });
-  vid.addEventListener("seeked", () => { needDraw = true; });
+  vid.addEventListener("emptied", () => { vReady = false; reqIdx = -1; });
+
   // La vidéo est téléchargée en entier avant de commencer (barre de chargement) :
   // ensuite chaque seek se fait en mémoire, sans attendre le réseau.
-  let fellBack = false;
-  function direct() { if (fellBack) return; fellBack = true; vid.src = SRC; wake(); }
-  vid.addEventListener("error", () => { if (vid.src.startsWith("blob:")) direct(); });
+  let lastProgress = performance.now(), retried = false;
+  function useSrc(url) {
+    vid.src = url; srcSet = true;
+    setTimeout(() => { if (!vReady) wake(); }, 300);
+    setTimeout(() => { if (!vReady && coarse) loader.classList.add("tap"); }, 2500);
+  }
+  function direct() { if (fellBack) return; fellBack = true; useSrc(SRC); }
+  vid.addEventListener("error", () => {
+    vReady = false;
+    if (!fellBack) direct();
+    else if (!retried) { retried = true; setTimeout(() => { vid.load(); }, 1500); }
+  });
+  const coarse = matchMedia("(pointer: coarse)").matches;
   (async () => {
     try {
       const r = await fetch(SRC);
@@ -535,17 +619,23 @@ footer .ph{text-decoration-color:var(--or-clair)}
       for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
-        parts.push(value); got += value.length;
-        if (total) { const pct = Math.round(got / total * 100); ldn.textContent = pct; ldb.style.width = pct + "%"; }
+        if (fellBack) { reader.cancel().catch(() => {}); return; }
+        parts.push(value); got += value.length; lastProgress = performance.now();
+        if (total) { const pct = Math.min(100, Math.round(got / total * 100)); ldn.textContent = pct; ldb.style.width = pct + "%"; }
       }
       if (fellBack) return;
-      vid.src = URL.createObjectURL(new Blob(parts, { type: "video/mp4" }));
-      wake();
+      ldn.textContent = 100; ldb.style.width = "100%";
+      useSrc(URL.createObjectURL(new Blob(parts, { type: "video/mp4" })));
     } catch (e) { direct(); }
   })();
-  // filet de sécurité : si le téléchargement traîne, on lit la vidéo directement
-  setTimeout(() => { if (!vReady) direct(); }, 20000);
-  setTimeout(() => loader.classList.add("done"), 30000);
+  // filets de sécurité : téléchargement bloqué 10 s → lecture directe ; site accessible quoi qu'il arrive
+  const t0 = performance.now();
+  const guard = setInterval(() => {
+    const now = performance.now();
+    if (synced) { clearInterval(guard); return; }
+    if (!srcSet && now - lastProgress > 10000) direct();
+    if (now - lastProgress > 15000 || now - t0 > 90000) { loader.classList.add("done"); clearInterval(guard); }
+  }, 1000);
 
   /* ---------- Dimensions ---------- */
   // Le canvas suit sa vraie taille à l'écran (évite le saut de la barre d'adresse iPhone)
@@ -578,7 +668,7 @@ footer .ph{text-decoration-color:var(--or-clair)}
   }
   // Dessin « cover » (remplit l'écran), cadré sur l'allée centrale
   function cover() {
-    const iw = vid.videoWidth || (portrait ? 1080 : 1920), ih = vid.videoHeight || (portrait ? 1800 : 1080);
+    const iw = IW, ih = IH;
     const s = Math.max(W / iw, H / ih);
     const w = iw * s, h = ih * s;
     let x = W / 2 - VP.x * w; x = Math.min(0, Math.max(W - w, x));
@@ -589,14 +679,26 @@ footer .ph{text-decoration-color:var(--or-clair)}
   /* ---------- Timeline ---------- */
   const VIDEO_END = 0.78, ZOOM_END = 0.93;
 
+  let lastT = performance.now();
   function tick() {
+    const now = performance.now();
+    // lissage réglé sur le temps, pas sur le nombre d'images : même ressenti sur un téléphone lent
+    const k = 1 - Math.pow(0.7, Math.min(100, now - lastT) / 16.67); lastT = now;
     const p = prog(intro);
-    ps += (p - ps) * 0.3; if (Math.abs(p - ps) < 0.0004) ps = p;     // lissage
-    if (vReady) {
-      const T = clamp(ps / VIDEO_END) * (vid.duration - 1 / FPS);
-      fcur += (T - fcur) * 0.3; if (Math.abs(T - fcur) < 0.002) fcur = T;
-      // une seule demande à la fois : on ne relance un seek que quand le précédent est fini
-      if (!vid.seeking && Math.abs(vid.currentTime - fcur) > 0.25 / FPS) vid.currentTime = fcur;
+    const F = clamp(p / VIDEO_END) * (FRAMES - 1);             // image visée (en images, pas en secondes)
+    if (!synced || Math.abs(p - ps) > 0.25) { ps = p; fpos = F; } // premier affichage ou saut : on se place directement
+    else {
+      ps += (p - ps) * k; if (Math.abs(p - ps) < 0.0004) ps = p;       // lissage du texte et des lignes
+      fpos += (F - fpos) * k; if (Math.abs(F - fpos) < 0.05) fpos = F;   // lissage de l'image
+    }
+    if (vReady && !unlocking) {
+      if (!vid.paused) vid.pause();
+      const want = Math.round(fpos);
+      const stuck = fellBack ? 3000 : 1200;
+      if (vid.seeking) { if (now - seekAt > stuck) seekTo(reqIdx >= 0 ? reqIdx : want); } // seek bloqué : on le relance
+      else if (want !== reqIdx) seekTo(want);                              // une seule demande à la fois
+      else if (shown !== reqIdx) { if (!grab() && now - seekAt > 600) seekTo(reqIdx); }
+      else if (grabs > 0) { grabs--; grab(); }                             // deux copies de plus, au cas où
     }
     if (needDraw || ps !== lastP) { render(ps); needDraw = false; lastP = ps; }
     requestAnimationFrame(tick);
@@ -610,11 +712,11 @@ footer .ph{text-decoration-color:var(--or-clair)}
 
     fctx.setTransform(DPR, 0, 0, DPR, 0, 0);
     fctx.fillStyle = "#120c0a"; fctx.fillRect(0, 0, W, H);
-    if (vReady) {
+    if (shown >= 0) {
       fctx.save();
       fctx.translate(vpx, vpy); fctx.scale(scale, scale); fctx.translate(-vpx, -vpy);
       fctx.imageSmoothingQuality = "high";
-      fctx.drawImage(vid, box.x, box.y, box.w, box.h);
+      fctx.drawImage(still, box.x, box.y, box.w, box.h);
       fctx.restore();
     }
     // la page « devient papier »
@@ -632,7 +734,7 @@ footer .ph{text-decoration-color:var(--or-clair)}
       el.style.opacity = op.toFixed(3);
       if (!el.classList.contains("ch-end")) el.style.transform = `translateY(${((1 - op) * (p < i + f ? 30 : -30)).toFixed(1)}px)`;
     }
-    const fr = Math.min(FRAMES, Math.round(clamp(p / VIDEO_END) * (FRAMES - 1)) + 1);
+    const fr = shown >= 0 ? shown + 1 : Math.min(FRAMES, Math.round(clamp(p / VIDEO_END) * (FRAMES - 1)) + 1);
     hudbar.style.height = (p * 100).toFixed(2) + "%";
     hudfc.textContent = `${pad(fr)} / ${FRAMES}`;
     hudch.textContent = p < 0.11 ? "Ouverture" : p < 0.29 ? "Formations" : p < 0.45 ? "Dégustations" : p < VIDEO_END ? "Photographies" : "Vignes";
@@ -671,7 +773,17 @@ footer .ph{text-decoration-color:var(--or-clair)}
   }, { passive: true });
   // « Passer l'intro » : défilement doux jusqu'au début du site
   skip.addEventListener("click", () => document.getElementById("services").scrollIntoView({ behavior: reduce ? "auto" : "smooth" }));
-  window.__intro = () => ({ p: prog(intro), ps, t: vid.currentTime, fcur, ready: vReady, seeking: vid.seeking });
+  // On quitte la page (onglet, appli, écran verrouillé) puis on revient : l'image reste affichée,
+  // la vidéo reste en pause, et on redemande la même image pour être sûr qu'elle est bien là.
+  function resync() { reqIdx = -1; verify = true; grabs = 0; needDraw = true; if (!unlocking && !vid.paused) vid.pause(); }
+  document.addEventListener("visibilitychange", () => { if (document.hidden) { if (!vid.paused) vid.pause(); } else resync(); });
+  addEventListener("pageshow", e => { if (e.persisted) resync(); });
+  addEventListener("focus", resync);
+  document.addEventListener("resume", resync);
+  for (const c of [film, lig, rangs]) c.addEventListener("contextrestored", () => { fit(); needDraw = true; });
+  still.addEventListener("contextrestored", () => { shown = -1; resync(); });
+  window.__intro = () => ({ p: prog(intro), ps, fpos, want: Math.round(fpos), req: reqIdx, shown, t: vid.currentTime,
+    paused: vid.paused, ready: vReady, synced, seeking: vid.seeking, seeks, frames: FRAMES, rs: vid.readyState, video: vid, still });
   addEventListener("resize", fit);
   if (window.ResizeObserver) new ResizeObserver(fit).observe(film);
   fit();
